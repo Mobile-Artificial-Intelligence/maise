@@ -44,17 +44,30 @@ class MaiseTtsService : TextToSpeechService() {
     // -------------------------------------------------------------------------
 
     override fun onIsLanguageAvailable(lang: String, country: String, variant: String): Int {
-        val matchingVoice = ALL_VOICES.find { voice ->
-            voice.locale.language.equals(lang, ignoreCase = true) ||
-            voice.locale.isO3Language.equals(lang, ignoreCase = true)
+        // Android passes ISO 639-2 (3-letter) language codes and ISO 3166 (3-letter) country codes.
+        // locale.language is 2-letter, so we must also check locale.isO3Language for the match.
+        fun localeMatchesLang(locale: java.util.Locale): Boolean =
+            locale.language.equals(lang, ignoreCase = true) ||
+            runCatching { locale.isO3Language }.getOrNull()?.equals(lang, ignoreCase = true) == true
+
+        fun localeMatchesCountry(locale: java.util.Locale): Boolean =
+            locale.country.equals(country, ignoreCase = true) ||
+            runCatching { locale.isO3Country }.getOrNull()?.equals(country, ignoreCase = true) == true
+
+        // First try to find an exact language+country match
+        val exactMatch = country.isNotEmpty() &&
+            ALL_VOICES.any { localeMatchesLang(it.locale) && localeMatchesCountry(it.locale) }
+        if (exactMatch) {
+            return if (variant.isNotEmpty()) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+                   else TextToSpeech.LANG_COUNTRY_AVAILABLE
         }
-        return when {
-            matchingVoice == null -> TextToSpeech.LANG_NOT_SUPPORTED
-            country.isNotEmpty() && matchingVoice.locale.country.equals(country, ignoreCase = true) ->
-                if (variant.isNotEmpty()) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-                else TextToSpeech.LANG_COUNTRY_AVAILABLE
-            else -> TextToSpeech.LANG_AVAILABLE
-        }
+
+        // Fall back to language-only match. Return LANG_COUNTRY_AVAILABLE rather than
+        // LANG_AVAILABLE so Settings enables "Listen to an example" on all Android OEMs
+        // (some check > 0 rather than >= 0).
+        val langMatch = ALL_VOICES.any { localeMatchesLang(it.locale) }
+        return if (langMatch) TextToSpeech.LANG_COUNTRY_AVAILABLE
+               else TextToSpeech.LANG_NOT_SUPPORTED
     }
 
     override fun onLoadLanguage(lang: String, country: String, variant: String): Int =
@@ -63,11 +76,18 @@ class MaiseTtsService : TextToSpeechService() {
     override fun onGetLanguage(): Array<String> = arrayOf("eng", "USA", "")
 
     override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String {
-        val matchingVoice = ALL_VOICES.firstOrNull { voice ->
-            voice.locale.language.equals(lang, ignoreCase = true) ||
-            voice.locale.isO3Language.equals(lang, ignoreCase = true)
-        }
-        return matchingVoice?.id ?: DEFAULT_VOICE_ID
+        fun localeMatchesLang(locale: java.util.Locale): Boolean =
+            locale.language.equals(lang, ignoreCase = true) ||
+            runCatching { locale.isO3Language }.getOrNull()?.equals(lang, ignoreCase = true) == true
+
+        fun localeMatchesCountry(locale: java.util.Locale): Boolean =
+            locale.country.equals(country, ignoreCase = true) ||
+            runCatching { locale.isO3Country }.getOrNull()?.equals(country, ignoreCase = true) == true
+
+        // Prefer a voice that matches both language and country (e.g. en-GB for British users)
+        val bestMatch = ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) && localeMatchesCountry(it.locale) }
+            ?: ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) }
+        return bestMatch?.id ?: DEFAULT_VOICE_ID
     }
 
     // -------------------------------------------------------------------------
