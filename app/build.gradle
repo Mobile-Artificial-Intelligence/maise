@@ -1,0 +1,105 @@
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+}
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def getCommitCount = { ->
+    def stdout = new ByteArrayOutputStream()
+    exec {
+        commandLine 'git', 'rev-list', '--count', 'HEAD'
+        standardOutput = stdout
+    }
+    return stdout.toString().trim().toInteger()
+}
+
+android {
+    namespace 'com.danemadsen.maise'
+    compileSdkVersion 33
+
+    defaultConfig {
+        applicationId "com.danemadsen.maise"
+        minSdkVersion 26
+        targetSdkVersion 33
+        versionCode getCommitCount()
+        versionName "1.0.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    bundle {
+        abi {
+            enableSplit true
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()
+                    && keystoreProperties['storeFile']
+                    && keystoreProperties['storePassword']
+                    && keystoreProperties['releaseAlias']
+                    && keystoreProperties['releasePassword']) {
+                    
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['releaseAlias']
+                keyPassword keystoreProperties['releasePassword']
+            } else {
+                println("⚠️ Keystore properties not found or incomplete; release builds will use debug signing unless you add key.properties.")
+                // NOTE: don't set signingConfig here
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
+        release {
+            signingConfig signingConfigs.release
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    buildFeatures {
+        viewBinding true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    // Prevent re-compression of large model files so they can be memory-mapped directly
+    aaptOptions {
+        noCompress 'onnx', 'bin'
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4"
+    implementation 'androidx.core:core-ktx:1.9.0'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'com.google.android.material:material:1.8.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
+
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:latest.release'
+}
