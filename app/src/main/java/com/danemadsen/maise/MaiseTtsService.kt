@@ -84,7 +84,14 @@ class MaiseTtsService : TextToSpeechService() {
             locale.country.equals(country, ignoreCase = true) ||
             runCatching { locale.isO3Country }.getOrNull()?.equals(country, ignoreCase = true) == true
 
-        // Prefer a voice that matches both language and country (e.g. en-GB for British users)
+        // Prefer the default voice if it matches the requested language/country
+        val defaultVoice = findVoiceById(DEFAULT_VOICE_ID)
+        if (defaultVoice != null && localeMatchesLang(defaultVoice.locale) &&
+            (country.isEmpty() || localeMatchesCountry(defaultVoice.locale))) {
+            return DEFAULT_VOICE_ID
+        }
+
+        // Fall back to the first voice that matches language+country, then language only
         val bestMatch = ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) && localeMatchesCountry(it.locale) }
             ?: ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) }
         return bestMatch?.id ?: DEFAULT_VOICE_ID
