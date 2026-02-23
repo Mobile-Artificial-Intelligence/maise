@@ -11,6 +11,7 @@ import android.util.Log
 private const val TAG = "MaiseTtsService"
 private const val PREFS_NAME = "maise_tts_prefs"
 private const val PREF_VOICE = "selected_voice"
+private const val INIT_TIMEOUT_MS = 2500L
 
 class MaiseTtsService : TextToSpeechService() {
 
@@ -20,15 +21,23 @@ class MaiseTtsService : TextToSpeechService() {
     @Volatile
     private var isStopped = false
 
+    private val initLock = Object()
+
     override fun onCreate() {
         super.onCreate()
-        // Initialize TTS engine in background; first synthesis will block if not ready
         Thread {
             try {
-                tts = KokoroTTS(applicationContext)
+                val engine = KokoroTTS(applicationContext)
+                synchronized(initLock) {
+                    tts = engine
+                    initLock.notifyAll()
+                }
                 Log.i(TAG, "KokoroTTS initialized")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialize KokoroTTS", e)
+                synchronized(initLock) {
+                    initLock.notifyAll()
+                }
             }
         }.start()
     }
@@ -94,19 +103,29 @@ class MaiseTtsService : TextToSpeechService() {
         }.toMutableList()
     }
 
+    override fun onIsValidVoiceName(voiceName: String): Int =
+        if (findVoiceById(voiceName) != null) TextToSpeech.SUCCESS else TextToSpeech.ERROR
+
+    override fun onLoadVoice(voiceName: String): Int =
+        if (findVoiceById(voiceName) != null) TextToSpeech.SUCCESS else TextToSpeech.ERROR
+
     // -------------------------------------------------------------------------
     // Synthesis
     // -------------------------------------------------------------------------
 
     override fun onStop() {
+        Log.d(TAG, "onStop() — cancelling synthesis")
         isStopped = true
     }
 
     override fun onSynthesizeText(request: SynthesisRequest, callback: SynthesisCallback) {
         isStopped = false
 
-        // Resolve voice: prefer the voice requested by caller, fall back to pref, then default
-        val requestedVoice = request.params?.getString("voiceName")
+        // Resolve voice: prefer request.voiceName (set by the framework when the caller uses
+        // setVoice()), then SharedPreferences, then hard default.
+        // Do NOT use request.params["voiceName"] — that key is unreliable across OEMs.
+        val requestedVoice = request.voiceName
+            ?.takeIf { it.isNotEmpty() }
             ?: getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_VOICE, DEFAULT_VOICE_ID)
             ?: DEFAULT_VOICE_ID
         val voiceId = if (findVoiceById(requestedVoice) != null) requestedVoice else DEFAULT_VOICE_ID
@@ -114,31 +133,49 @@ class MaiseTtsService : TextToSpeechService() {
         val text = request.charSequenceText?.toString()?.takeIf { it.isNotBlank() }
             ?: run { callback.done(); return }
 
-        // Wait for engine if still loading (up to 30 s)
-        val deadline = System.currentTimeMillis() + 30_000L
-        while (tts == null && System.currentTimeMillis() < deadline) {
-            Thread.sleep(100)
+        val speed = (request.speechRate / 100f).coerceIn(0.5f, 2.0f)
+        Log.d(TAG, "onSynthesizeText: voice=$voiceId, rate=$speed, textLen=${text.length}")
+
+        // Signal audio start immediately so OEM Settings apps don't time out waiting for data.
+        // This must happen before the init wait and before synthesis.
+        callback.start(SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+        Log.d(TAG, "callback.start() called at ${System.currentTimeMillis()}")
+
+        // Wait for engine using a proper lock rather than a spin-wait.
+        synchronized(initLock) {
+            if (tts == null) {
+                Log.d(TAG, "Waiting for KokoroTTS init (max ${INIT_TIMEOUT_MS}ms)")
+                initLock.wait(INIT_TIMEOUT_MS)
+            }
         }
 
         val engine = tts ?: run {
-            Log.e(TAG, "TTS engine not ready")
+            Log.e(TAG, "TTS engine not ready after ${INIT_TIMEOUT_MS}ms — returning error")
             callback.error()
             return
         }
 
-        if (isStopped) { callback.done(); return }
+        if (isStopped) {
+            Log.d(TAG, "Stopped before synthesis — exiting early")
+            callback.done()
+            return
+        }
 
         try {
-            val speed = request.speechRate / 100f  // SpeechRate is 0–200 (100 = normal)
-            val pcm = engine.synthesize(text, voiceId, speed.coerceIn(0.5f, 2.0f))
+            val synthStart = System.currentTimeMillis()
+            val pcm = engine.synthesize(text, voiceId, speed)
+            Log.d(TAG, "engine.synthesize() took ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
 
-            if (isStopped) { callback.done(); return }
-
-            callback.start(SAMPLE_RATE, AudioFormat.ENCODING_PCM_16BIT, 1)
+            if (isStopped) {
+                Log.d(TAG, "Stopped after synthesis — exiting early")
+                callback.done()
+                return
+            }
 
             // Feed audio in chunks
             val chunkSamples = 4096
             var offset = 0
+            var firstChunk = true
             while (offset < pcm.size && !isStopped) {
                 val end = minOf(offset + chunkSamples, pcm.size)
                 val byteCount = (end - offset) * 2
@@ -148,6 +185,10 @@ class MaiseTtsService : TextToSpeechService() {
                     val byteIdx = (i - offset) * 2
                     buf[byteIdx]     = (s.toInt() and 0xFF).toByte()
                     buf[byteIdx + 1] = ((s.toInt() shr 8) and 0xFF).toByte()
+                }
+                if (firstChunk) {
+                    Log.d(TAG, "First audioAvailable() at ${System.currentTimeMillis()}")
+                    firstChunk = false
                 }
                 callback.audioAvailable(buf, 0, byteCount)
                 offset = end
