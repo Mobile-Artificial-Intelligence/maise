@@ -18,7 +18,7 @@ const val SAMPLE_RATE = 24000
  *
  * Usage:
  *   val tts = KokoroTTS(context)
- *   val pcm = tts.synthesize("Hello world", "af_heart")
+ *   val pcm = tts.synthesize("Hello world", "en-US-heart")
  *   tts.close()
  */
 class KokoroTTS(private val context: Context) {
