@@ -75,27 +75,7 @@ class MaiseTtsService : TextToSpeechService() {
 
     override fun onGetLanguage(): Array<String> = arrayOf("eng", "USA", "")
 
-    override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String {
-        fun localeMatchesLang(locale: java.util.Locale): Boolean =
-            locale.language.equals(lang, ignoreCase = true) ||
-            runCatching { locale.isO3Language }.getOrNull()?.equals(lang, ignoreCase = true) == true
-
-        fun localeMatchesCountry(locale: java.util.Locale): Boolean =
-            locale.country.equals(country, ignoreCase = true) ||
-            runCatching { locale.isO3Country }.getOrNull()?.equals(country, ignoreCase = true) == true
-
-        // Prefer the default voice if it matches the requested language/country
-        val defaultVoice = findVoiceById(DEFAULT_VOICE_ID)
-        if (defaultVoice != null && localeMatchesLang(defaultVoice.locale) &&
-            (country.isEmpty() || localeMatchesCountry(defaultVoice.locale))) {
-            return DEFAULT_VOICE_ID
-        }
-
-        // Fall back to the first voice that matches language+country, then language only
-        val bestMatch = ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) && localeMatchesCountry(it.locale) }
-            ?: ALL_VOICES.firstOrNull { localeMatchesLang(it.locale) }
-        return bestMatch?.id ?: DEFAULT_VOICE_ID
-    }
+    override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String = DEFAULT_VOICE_ID
 
     // -------------------------------------------------------------------------
     // Voice enumeration (Android 5.0+ API)
