@@ -44,11 +44,16 @@ class MaiseTtsService : TextToSpeechService() {
     // -------------------------------------------------------------------------
 
     override fun onIsLanguageAvailable(lang: String, country: String, variant: String): Int {
-        return if (lang.equals("eng", ignoreCase = true) ||
-            lang.equals("en", ignoreCase = true)) {
-            TextToSpeech.LANG_AVAILABLE
-        } else {
-            TextToSpeech.LANG_NOT_SUPPORTED
+        val matchingVoice = ALL_VOICES.find { voice ->
+            voice.locale.language.equals(lang, ignoreCase = true) ||
+            voice.locale.isO3Language.equals(lang, ignoreCase = true)
+        }
+        return when {
+            matchingVoice == null -> TextToSpeech.LANG_NOT_SUPPORTED
+            country.isNotEmpty() && matchingVoice.locale.country.equals(country, ignoreCase = true) ->
+                if (variant.isNotEmpty()) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
+                else TextToSpeech.LANG_COUNTRY_AVAILABLE
+            else -> TextToSpeech.LANG_AVAILABLE
         }
     }
 
@@ -56,6 +61,14 @@ class MaiseTtsService : TextToSpeechService() {
         onIsLanguageAvailable(lang, country, variant)
 
     override fun onGetLanguage(): Array<String> = arrayOf("eng", "USA", "")
+
+    override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String {
+        val matchingVoice = ALL_VOICES.firstOrNull { voice ->
+            voice.locale.language.equals(lang, ignoreCase = true) ||
+            voice.locale.isO3Language.equals(lang, ignoreCase = true)
+        }
+        return matchingVoice?.id ?: DEFAULT_VOICE_ID
+    }
 
     // -------------------------------------------------------------------------
     // Voice enumeration (Android 5.0+ API)
