@@ -59,16 +59,16 @@ jobs:
       - name: Decode Keystore File
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
-        run: echo "$KEYSTORE" | base64 --decode > android/app/key.jks
+        run: echo "$KEYSTORE" | base64 --decode > app/key.jks
 
       - name: Create key.properties
         run: |
-          echo "storeFile=key.jks" > android/key.properties
-          echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" >> android/key.properties
-          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
-          echo "releasePassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> android/key.properties
-          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
-          echo "releaseAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> android/key.properties
+          echo "storeFile=key.jks" > key.properties
+          echo "storePassword=${{ secrets.ANDROID_STORE_PASSWORD }}" >> key.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
+          echo "releasePassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
+          echo "releaseAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
     
       - name: Build APK
         run: ./gradlew :app:assembleRelease
