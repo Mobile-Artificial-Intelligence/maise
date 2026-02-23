@@ -7,6 +7,7 @@ on:
     branches:
       - master
     paths:
+      - '.github/workflows/build.yml'
       - 'app/**'
       - 'gradle/**'
       - 'build.gradle'
@@ -15,6 +16,7 @@ on:
     branches:
       - master
     paths:
+      - '.github/workflows/build.yml'
       - 'app/**'
       - 'gradle/**'
       - 'build.gradle'
