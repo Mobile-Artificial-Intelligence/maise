@@ -21,7 +21,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var prefs: SharedPreferences
 
-    private var tts: KokoroTTS? = null
+    private var tts: TtsEngine? = null
     private var audioTrack: AudioTrack? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         setStatus("Loading models\u2026")
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                tts = KokoroTTS(applicationContext)
+                tts = TtsEngine(applicationContext)
                 withContext(Dispatchers.Main) { setStatus("Ready") }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { setStatus("Error loading models: ${e.message}") }

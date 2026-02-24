@@ -16,7 +16,7 @@ private const val INIT_TIMEOUT_MS = 2500L
 class MaiseTtsService : TextToSpeechService() {
 
     @Volatile
-    private var tts: KokoroTTS? = null
+    private var tts: TtsEngine? = null
 
     @Volatile
     private var isStopped = false
@@ -27,14 +27,14 @@ class MaiseTtsService : TextToSpeechService() {
         super.onCreate()
         Thread {
             try {
-                val engine = KokoroTTS(applicationContext)
+                val engine = TtsEngine(applicationContext)
                 synchronized(initLock) {
                     tts = engine
                     initLock.notifyAll()
                 }
-                Log.i(TAG, "KokoroTTS initialized")
+                Log.i(TAG, "TtsEngine initialized")
             } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize KokoroTTS", e)
+                Log.e(TAG, "Failed to initialize TtsEngine", e)
                 synchronized(initLock) {
                     initLock.notifyAll()
                 }
@@ -124,7 +124,7 @@ class MaiseTtsService : TextToSpeechService() {
         // Wait for engine using a proper lock rather than a spin-wait.
         synchronized(initLock) {
             if (tts == null) {
-                Log.d(TAG, "Waiting for KokoroTTS init (max ${INIT_TIMEOUT_MS}ms)")
+                Log.d(TAG, "Waiting for TtsEngine init (max ${INIT_TIMEOUT_MS}ms)")
                 initLock.wait(INIT_TIMEOUT_MS)
             }
         }
