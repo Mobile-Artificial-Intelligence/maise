@@ -141,37 +141,43 @@ class MaiseTtsService : TextToSpeechService() {
             return
         }
 
+        val sentences = splitSentences(text)
+        Log.d(TAG, "Split into ${sentences.size} sentence(s)")
+
         try {
-            val synthStart = System.currentTimeMillis()
-            val pcm = engine.synthesize(text, voiceId, speed)
-            Log.d(TAG, "engine.synthesize() took ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
-
-            if (isStopped) {
-                Log.d(TAG, "Stopped after synthesis — exiting early")
-                callback.done()
-                return
-            }
-
-            // Feed audio in chunks
-            val chunkSamples = 4096
-            var offset = 0
-            var firstChunk = true
-            while (offset < pcm.size && !isStopped) {
-                val end = minOf(offset + chunkSamples, pcm.size)
-                val byteCount = (end - offset) * 2
-                val buf = ByteArray(byteCount)
-                for (i in offset until end) {
-                    val s = pcm[i]
-                    val byteIdx = (i - offset) * 2
-                    buf[byteIdx]     = (s.toInt() and 0xFF).toByte()
-                    buf[byteIdx + 1] = ((s.toInt() shr 8) and 0xFF).toByte()
+            var firstChunkEver = true
+            for ((index, sentence) in sentences.withIndex()) {
+                if (isStopped) {
+                    Log.d(TAG, "Stopped before sentence $index — exiting early")
+                    break
                 }
-                if (firstChunk) {
-                    Log.d(TAG, "First audioAvailable() at ${System.currentTimeMillis()}")
-                    firstChunk = false
+
+                val synthStart = System.currentTimeMillis()
+                val pcm = engine.synthesize(sentence, voiceId, speed)
+                Log.d(TAG, "Sentence $index synthesized in ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
+
+                if (isStopped) break
+
+                // Stream this sentence's audio immediately so playback can begin
+                val chunkSamples = 4096
+                var offset = 0
+                while (offset < pcm.size && !isStopped) {
+                    val end = minOf(offset + chunkSamples, pcm.size)
+                    val byteCount = (end - offset) * 2
+                    val buf = ByteArray(byteCount)
+                    for (i in offset until end) {
+                        val s = pcm[i]
+                        val byteIdx = (i - offset) * 2
+                        buf[byteIdx]     = (s.toInt() and 0xFF).toByte()
+                        buf[byteIdx + 1] = ((s.toInt() shr 8) and 0xFF).toByte()
+                    }
+                    if (firstChunkEver) {
+                        Log.d(TAG, "First audioAvailable() at ${System.currentTimeMillis()}")
+                        firstChunkEver = false
+                    }
+                    callback.audioAvailable(buf, 0, byteCount)
+                    offset = end
                 }
-                callback.audioAvailable(buf, 0, byteCount)
-                offset = end
             }
 
             callback.done()
@@ -179,5 +185,19 @@ class MaiseTtsService : TextToSpeechService() {
             Log.e(TAG, "Synthesis failed", e)
             callback.error()
         }
+    }
+
+    /**
+     * Split [text] into individual sentences so each one stays within the model's
+     * phoneme token limit.  Splits after sentence-ending punctuation (. ! ?) that
+     * is followed by whitespace or end-of-string.  Preserves the terminal
+     * punctuation on each chunk and trims surrounding whitespace.
+     * Empty chunks are discarded.
+     */
+    private fun splitSentences(text: String): List<String> {
+        // Split after . ! ? when followed by whitespace or end-of-input.
+        // The look-behind keeps the punctuation attached to the preceding sentence.
+        val raw = text.split(Regex("(?<=[.!?])(?:\\s+|$)"))
+        return raw.map { it.trim() }.filter { it.isNotEmpty() }
     }
 }
