@@ -52,37 +52,15 @@ class MaiseTtsService : TextToSpeechService() {
     // Language support — Kokoro works best with English; report English as supported
     // -------------------------------------------------------------------------
 
-    override fun onIsLanguageAvailable(lang: String, country: String, variant: String): Int {
-        // Android passes ISO 639-2 (3-letter) language codes and ISO 3166 (3-letter) country codes.
-        // locale.language is 2-letter, so we must also check locale.isO3Language for the match.
-        fun localeMatchesLang(locale: java.util.Locale): Boolean =
-            locale.language.equals(lang, ignoreCase = true) ||
-            runCatching { locale.isO3Language }.getOrNull()?.equals(lang, ignoreCase = true) == true
-
-        fun localeMatchesCountry(locale: java.util.Locale): Boolean =
-            locale.country.equals(country, ignoreCase = true) ||
-            runCatching { locale.isO3Country }.getOrNull()?.equals(country, ignoreCase = true) == true
-
-        // First try to find an exact language+country match
-        val exactMatch = country.isNotEmpty() &&
-            ALL_VOICES.any { localeMatchesLang(it.locale) && localeMatchesCountry(it.locale) }
-        if (exactMatch) {
-            return if (variant.isNotEmpty()) TextToSpeech.LANG_COUNTRY_VAR_AVAILABLE
-                   else TextToSpeech.LANG_COUNTRY_AVAILABLE
-        }
-
-        // Fall back to language-only match. Return LANG_COUNTRY_AVAILABLE rather than
-        // LANG_AVAILABLE so Settings enables "Listen to an example" on all Android OEMs
-        // (some check > 0 rather than >= 0).
-        val langMatch = ALL_VOICES.any { localeMatchesLang(it.locale) }
-        return if (langMatch) TextToSpeech.LANG_COUNTRY_AVAILABLE
-               else TextToSpeech.LANG_NOT_SUPPORTED
+    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
+        return TextToSpeech.LANG_AVAILABLE
     }
 
-    override fun onLoadLanguage(lang: String, country: String, variant: String): Int =
-        onIsLanguageAvailable(lang, country, variant)
+    override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
+        return TextToSpeech.LANG_AVAILABLE
+    }
 
-    override fun onGetLanguage(): Array<String> = arrayOf("en", "US", "")
+    override fun onGetLanguage(): Array<String> = arrayOf("", "", "")
 
     override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String = DEFAULT_VOICE_ID
 
