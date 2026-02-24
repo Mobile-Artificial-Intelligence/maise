@@ -87,3 +87,6 @@ lint/tmp/
 .idea/
 .DS_Store
 
+*.jks
+*.keystore
+key.properties
