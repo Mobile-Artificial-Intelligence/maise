@@ -60,7 +60,7 @@ class MaiseTtsService : TextToSpeechService() {
         return TextToSpeech.LANG_AVAILABLE
     }
 
-    override fun onGetLanguage(): Array<String> = arrayOf("", "", "")
+    override fun onGetLanguage(): Array<String> = arrayOf("en", "US", "")
 
     override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String = DEFAULT_VOICE_ID
 
