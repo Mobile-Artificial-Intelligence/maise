@@ -10,6 +10,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import com.danemadsen.maise.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -100,13 +102,33 @@ class MainActivity : AppCompatActivity() {
                     .build()
                 audioTrack?.play()
 
-                for ((index, sentence) in sentences.withIndex()) {
-                    val pcm = engine.synthesize(sentence, voiceInfo.id)
-                    if (index == 0) withContext(Dispatchers.Main) { setStatus("Playing\u2026") }
-                    audioTrack?.write(pcm, 0, pcm.size)
+                // Producer-consumer: synthesis and playback run concurrently.
+                // Channel capacity 1 lets the producer stay one sentence ahead of playback.
+                coroutineScope {
+                    val channel = Channel<ShortArray>(capacity = 1)
+
+                    // Producer: synthesize sentences and send PCM to channel.
+                    launch {
+                        try {
+                            for (sentence in sentences) {
+                                channel.send(engine.synthesize(sentence, voiceInfo.id))
+                            }
+                        } finally {
+                            channel.close()
+                        }
+                    }
+
+                    // Consumer (this coroutine): receive PCM and write to AudioTrack.
+                    var first = true
+                    for (pcm in channel) {
+                        if (first) {
+                            withContext(Dispatchers.Main) { setStatus("Playing\u2026") }
+                            first = false
+                        }
+                        audioTrack?.write(pcm, 0, pcm.size)
+                    }
                 }
 
-                // Drain remaining buffered audio then stop.
                 audioTrack?.stop()
 
                 withContext(Dispatchers.Main) {

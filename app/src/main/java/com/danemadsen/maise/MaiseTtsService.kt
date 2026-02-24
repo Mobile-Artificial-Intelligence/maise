@@ -7,6 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import java.util.concurrent.LinkedBlockingQueue
 
 private const val TAG = "MaiseTtsService"
 private const val PREFS_NAME = "maise_tts_prefs"
@@ -144,21 +145,36 @@ class MaiseTtsService : TextToSpeechService() {
         val sentences = splitSentences(text)
         Log.d(TAG, "Split into ${sentences.size} sentence(s)")
 
+        // Queue capacity 1: producer can synthesize one sentence ahead of playback.
+        // ShortArray(0) is used as an end-of-stream sentinel (synthesis never produces empty audio).
+        val queue = LinkedBlockingQueue<ShortArray>(1)
+
+        // Producer thread: synthesize sentences and enqueue PCM.
+        val producer = Thread {
+            try {
+                for ((index, sentence) in sentences.withIndex()) {
+                    if (isStopped) break
+                    val synthStart = System.currentTimeMillis()
+                    val pcm = engine.synthesize(sentence, voiceId, speed)
+                    Log.d(TAG, "Sentence $index synthesized in ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
+                    if (isStopped) break
+                    queue.put(pcm)
+                }
+            } catch (_: InterruptedException) {
+                /* cancelled by consumer */
+            } finally {
+                runCatching { queue.put(ShortArray(0)) } // best-effort sentinel
+            }
+        }
+        producer.start()
+
+        // Consumer (current thread): stream PCM from the queue to the callback.
         try {
             var firstChunkEver = true
-            for ((index, sentence) in sentences.withIndex()) {
-                if (isStopped) {
-                    Log.d(TAG, "Stopped before sentence $index — exiting early")
-                    break
-                }
+            while (!isStopped) {
+                val pcm = queue.take()
+                if (pcm.isEmpty()) break // sentinel received
 
-                val synthStart = System.currentTimeMillis()
-                val pcm = engine.synthesize(sentence, voiceId, speed)
-                Log.d(TAG, "Sentence $index synthesized in ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
-
-                if (isStopped) break
-
-                // Stream this sentence's audio immediately so playback can begin
                 val chunkSamples = 4096
                 var offset = 0
                 while (offset < pcm.size && !isStopped) {
@@ -179,11 +195,12 @@ class MaiseTtsService : TextToSpeechService() {
                     offset = end
                 }
             }
-
             callback.done()
         } catch (e: Exception) {
             Log.e(TAG, "Synthesis failed", e)
             callback.error()
+        } finally {
+            producer.interrupt() // unblocks producer if it's waiting on queue.put()
         }
     }
 
