@@ -187,17 +187,4 @@ class MaiseTtsService : TextToSpeechService() {
         }
     }
 
-    /**
-     * Split [text] into individual sentences so each one stays within the model's
-     * phoneme token limit.  Splits after sentence-ending punctuation (. ! ?) that
-     * is followed by whitespace or end-of-string.  Preserves the terminal
-     * punctuation on each chunk and trims surrounding whitespace.
-     * Empty chunks are discarded.
-     */
-    private fun splitSentences(text: String): List<String> {
-        // Split after . ! ? when followed by whitespace or end-of-input.
-        // The look-behind keeps the punctuation attached to the preceding sentence.
-        val raw = text.split(Regex("(?<=[.!?])(?:\\s+|$)"))
-        return raw.map { it.trim() }.filter { it.isNotEmpty() }
-    }
 }

@@ -72,7 +72,12 @@ class MainActivity : AppCompatActivity() {
 
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                val pcm = engine.synthesize(text, voiceInfo.id)
+                val sentences = splitSentences(text)
+                val chunks = sentences.map { engine.synthesize(it, voiceInfo.id) }
+                val pcm = ShortArray(chunks.sumOf { it.size }).also { out ->
+                    var pos = 0
+                    for (chunk in chunks) { chunk.copyInto(out, pos); pos += chunk.size }
+                }
                 withContext(Dispatchers.Main) { setStatus("Playing\u2026") }
                 playPcm(pcm)
                 withContext(Dispatchers.Main) {
