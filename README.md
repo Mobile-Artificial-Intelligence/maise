@@ -10,7 +10,7 @@ Maise is an open-source android speech engine designed to provide a powerful and
 To clone the repository, use the following command:
 
 ```bash
-git clone https://github.com/Mobile-Artificial-Intelligence/maid.git
+git clone https://github.com/Mobile-Artificial-Intelligence/maise.git
 ```
 
 ## Building
