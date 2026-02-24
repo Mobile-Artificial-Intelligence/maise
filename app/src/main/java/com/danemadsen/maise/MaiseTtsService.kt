@@ -64,6 +64,8 @@ class MaiseTtsService : TextToSpeechService() {
 
     override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String = DEFAULT_VOICE_ID
 
+    override fun onGetFeaturesForLanguage(lang: String, country: String, variant: String): Set<String> = emptySet()
+
     // -------------------------------------------------------------------------
     // Voice enumeration (Android 5.0+ API)
     // -------------------------------------------------------------------------
