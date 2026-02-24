@@ -69,6 +69,11 @@ jobs:
           echo "releasePassword=${{ secrets.ANDROID_KEY_PASSWORD }}" >> key.properties
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
           echo "releaseAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
+
+      - name: Rename APK
+        run: |
+          mkdir -p release
+          mv app/build/outputs/apk/release/app-release.apk release/maise-arm64-v8a.apk
     
       - name: Build APK
         run: ./gradlew :app:assembleRelease
