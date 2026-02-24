@@ -73,13 +73,42 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val sentences = splitSentences(text)
-                val chunks = sentences.map { engine.synthesize(it, voiceInfo.id) }
-                val pcm = ShortArray(chunks.sumOf { it.size }).also { out ->
-                    var pos = 0
-                    for (chunk in chunks) { chunk.copyInto(out, pos); pos += chunk.size }
+                val minBuf = AudioTrack.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT
+                )
+
+                audioTrack?.stop()
+                audioTrack?.release()
+                audioTrack = AudioTrack.Builder()
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(SAMPLE_RATE)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(minBuf * 4)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .build()
+                audioTrack?.play()
+
+                for ((index, sentence) in sentences.withIndex()) {
+                    val pcm = engine.synthesize(sentence, voiceInfo.id)
+                    if (index == 0) withContext(Dispatchers.Main) { setStatus("Playing\u2026") }
+                    audioTrack?.write(pcm, 0, pcm.size)
                 }
-                withContext(Dispatchers.Main) { setStatus("Playing\u2026") }
-                playPcm(pcm)
+
+                // Drain remaining buffered audio then stop.
+                audioTrack?.stop()
+
                 withContext(Dispatchers.Main) {
                     setStatus("Done")
                     binding.speakButton.isEnabled = true
@@ -91,38 +120,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun playPcm(pcm: ShortArray) {
-        val minBuf = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-
-        audioTrack?.stop()
-        audioTrack?.release()
-
-        audioTrack = AudioTrack.Builder()
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            .setAudioFormat(
-                AudioFormat.Builder()
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                    .build()
-            )
-            .setBufferSizeInBytes(maxOf(minBuf, pcm.size * 2))
-            .setTransferMode(AudioTrack.MODE_STATIC)
-            .build()
-
-        audioTrack?.write(pcm, 0, pcm.size)
-        audioTrack?.play()
     }
 
     private fun setStatus(msg: String) {
