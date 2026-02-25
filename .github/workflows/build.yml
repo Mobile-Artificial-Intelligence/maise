@@ -76,21 +76,30 @@ jobs:
           echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
           echo "releaseAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> key.properties
     
-      - name: Build APK
-        run: ./gradlew :app:assembleRelease
+      - name: Install bundletool
+        run: wget -q https://github.com/google/bundletool/releases/download/1.15.6/bundletool-all-1.15.6.jar -O bundletool.jar
 
-      - name: Rename APK
-        run: |
-          mkdir -p release
-          mv app/build/outputs/apk/release/app-release.apk release/maise-arm64-v8a.apk
-
-      - name: Build AAP
+      - name: Build AAB
         run: ./gradlew :app:bundleRelease
 
-      - name: Rename AAP
+      - name: Rename AAB
         run: |
           mkdir -p release
           mv app/build/outputs/bundle/release/app-release.aab release/maise-release.aab
+
+      - name: Build APK from AAB
+        run: |
+          java -jar bundletool.jar build-apks \
+            --bundle=release/maise-release.aab \
+            --output=release/maise.apks \
+            --mode=universal \
+            --ks=app/key.jks \
+            "--ks-pass=pass:${{ secrets.ANDROID_STORE_PASSWORD }}" \
+            "--ks-key-alias=${{ secrets.ANDROID_KEY_ALIAS }}" \
+            "--key-pass=pass:${{ secrets.ANDROID_KEY_PASSWORD }}"
+          unzip release/maise.apks universal.apk -d release/
+          mv release/universal.apk release/maise-arm64-v8a.apk
+          rm release/maise.apks
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
