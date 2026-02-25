@@ -21,3 +21,6 @@ To build the project, navigate to the project directory and run:
 ```
 
 The output apk will be located in `app/build/outputs/apk/release/app-release.apk` or `app/build/outputs/apk/debug/app-debug.apk`.
+
+## Setup
+To use this app as a system speech service, you will need to set it as the default TTS engine in your device settings. You can do this by going to `Settings > Accessibility > Text-to-Speech Output` and selecting Maise as the default engine.
