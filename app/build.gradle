@@ -20,12 +20,12 @@ def getCommitCount = { ->
 
 android {
     namespace 'com.danemadsen.maise'
-    compileSdkVersion 33
+    compileSdkVersion 35
 
     defaultConfig {
         applicationId "com.danemadsen.maise"
         minSdkVersion 26
-        targetSdkVersion 33
+        targetSdkVersion 35
         versionCode getCommitCount()
         versionName "1.0.0"
 
