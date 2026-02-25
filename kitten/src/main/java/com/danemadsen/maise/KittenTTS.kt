@@ -100,7 +100,6 @@ class KittenTTS(private val context: Context) {
     }
 
     private fun loadVoiceStyle(voiceId: String, phonemeLength: Int): FloatArray {
-        // "en-US-bella-kitten" → "bella"
         val assetPath = "voices/$voiceId.bin"
 
         val bytes = context.assets.open(assetPath).use { it.readBytes() }
