@@ -7,6 +7,8 @@ import android.media.AudioTrack
 import android.os.Bundle
 import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.lifecycleScope
 import com.danemadsen.maise.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
@@ -31,6 +33,13 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
         prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+
+        val pad = (24 * resources.displayMetrics.density).toInt()
+        ViewCompat.setOnApplyWindowInsetsListener(binding.root) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            v.setPadding(bars.left + pad, bars.top + pad, bars.right + pad, bars.bottom + pad)
+            WindowInsetsCompat.CONSUMED
+        }
 
         // Populate voice spinner
         val voiceLabels: List<String> = ALL_VOICES.map { it.toString() }
