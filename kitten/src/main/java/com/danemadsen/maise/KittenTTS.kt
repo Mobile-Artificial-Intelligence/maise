@@ -52,7 +52,7 @@ class KittenTTS(private val context: Context) {
         //    KokoroTokenizer.encode() returns [0, ...tokens..., 0].
         //    KittenTTS needs [0, ...tokens..., 10, 0] so we insert the extra
         //    end marker (token 10) before the final padding zero.
-        val kokoroTokens = KokoroTokenizer.encode(phonemes)
+        val kokoroTokens = OpenPhonemizerOutputTokenizer.encode(phonemes)
         val tokens = IntArray(kokoroTokens.size + 1).also { arr ->
             kokoroTokens.copyInto(arr, 0, 0, kokoroTokens.size - 1)
             arr[kokoroTokens.size - 1] = 10

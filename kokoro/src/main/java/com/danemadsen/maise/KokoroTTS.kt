@@ -46,7 +46,7 @@ class KokoroTTS(private val context: Context) {
         val phonemes = phonemizer.phonemize(text)
 
         // 2. Tokenize phonemes (wraps with special token 0 on both ends)
-        val tokens = KokoroTokenizer.encode(phonemes)
+        val tokens = OpenPhonemizerOutputTokenizer.encode(phonemes)
 
         // n_tokens is phoneme count without the two wrapping special tokens, capped at 509
         val nTokens = minOf(maxOf(tokens.size - 2, 0), MAX_PHONEME_LENGTH - 1)

@@ -7,7 +7,7 @@ package com.danemadsen.maise
  * Unknown characters map to the pad/unk token (ID 0, "$").
  * encode() wraps the sequence: [0, ...ids..., 0]
  */
-object KokoroTokenizer {
+object OpenPhonemizerOutputTokenizer {
 
     private const val SPECIAL_ID = 0  // "$" — pad / unk / sequence wrapper
 
