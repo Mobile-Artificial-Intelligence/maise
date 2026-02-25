@@ -69,7 +69,7 @@ class OpenPhonemizer(context: Context, private val env: OrtEnvironment) {
      * Words are looked up in the dictionary first; unknown words fall back to the model.
      */
     fun phonemize(text: String): String {
-        val tokens = WORD_REGEX.findAll(text).map { it.value }.toList()
+        val tokens = WORD_REGEX.findAll(normalizeText(text)).map { it.value }.toList()
         val sb = StringBuilder()
 
         for (token in tokens) {
