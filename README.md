@@ -4,7 +4,7 @@
 
 # Maise - Mobile Artificial Intelligence Speech Engine
 
-Maise is an open-source android speech engine designed to provide a powerful and flexible platform for speech sythesis on the edge. To achive this goal, Maise utilises the [Onnx Runtime](https://github.com/microsoft/onnxruntime) to run multiple bleeding edge models to generate high quality speech. For text processing, [Open Phonemizer](https://github.com/NeuralVox/OpenPhonemizer) is used to convert text into phonemes, which are then fed into the two speech synthesis models ([Kokoro](https://github.com/hexgrad/kokoro) and [Kitten TTS](https://github.com/KittenML/KittenTTS)) to generate the final audio output. Maise is implemented as a android system speech service, allowing it to work out of the box with any android application that uses the system text-to-speech service.
+Maise is an open-source android speech engine designed to provide a powerful and flexible platform for speech synthesis on the edge. To achieve this goal, Maise utilises the [Onnx Runtime](https://github.com/microsoft/onnxruntime) to run multiple bleeding edge models to generate high quality speech. For text processing, [Open Phonemizer](https://github.com/NeuralVox/OpenPhonemizer) is used to convert text into phonemes, which are then fed into the two speech synthesis models ([Kokoro](https://github.com/hexgrad/kokoro) and [Kitten TTS](https://github.com/KittenML/KittenTTS)) to generate the final audio output. Maise is implemented as a android system speech service, allowing it to work out of the box with any android application that uses the system text-to-speech service.
 
 ## Cloning
 To clone the repository, use the following command:
