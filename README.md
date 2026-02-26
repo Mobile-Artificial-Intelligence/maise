@@ -4,23 +4,78 @@
 
 # Maise - Mobile Artificial Intelligence Speech Engine
 
-Maise is an open-source android speech engine designed to provide a powerful and flexible platform for speech synthesis on the edge. To achieve this goal, Maise utilizes the [Onnx Runtime](https://github.com/microsoft/onnxruntime) to run multiple bleeding edge models to generate high quality speech. For text processing, [Open Phonemizer](https://github.com/NeuralVox/OpenPhonemizer) is used to convert text into phonemes, which are then fed into the two speech synthesis models ([Kokoro](https://github.com/hexgrad/kokoro) and [Kitten TTS](https://github.com/KittenML/KittenTTS)) to generate the final audio output. Maise is implemented as a android system speech service, allowing it to work out of the box with any android application that uses the system text-to-speech service.
+Maise is an open-source Android speech engine that provides high-quality, on-device text-to-speech synthesis. It is implemented as an Android system TTS service, meaning it works out of the box with any app that uses the standard Android `TextToSpeech` API — no special integration required.
+
+## How It Works
+
+Maise runs the full TTS pipeline locally on the device using [ONNX Runtime](https://github.com/microsoft/onnxruntime):
+
+1. **Text normalization** — raw input text is cleaned and normalized (numbers, abbreviations, punctuation, etc.)
+2. **Phonemization** — [Open Phonemizer](https://github.com/NeuralVox/OpenPhonemizer) converts normalized text into phoneme sequences
+3. **Synthesis** — phonemes are fed into one of two neural TTS models to produce a raw PCM audio waveform:
+   - [**Kokoro**](https://github.com/hexgrad/kokoro) — a high-quality, multi-lingual TTS model
+   - [**Kitten TTS**](https://github.com/KittenML/KittenTTS) — an alternative English TTS model
+4. **Streaming playback** — sentences are synthesized and played concurrently using a producer-consumer pipeline so audio starts playing before the full text has been synthesized
+
+Audio output is 24 kHz mono 16-bit PCM.
+
+## Voices
+
+Maise ships with a large collection of voices across both engines and multiple languages.
+
+### Kokoro Voices
+
+| Language | Voices |
+|---|---|
+| English (US) | alloy, aoede, bella, heart, jessica, kore, nicole, nova, river, sarah, sky, adam, echo, eric, fenrir, liam, michael, onyx, puck, santa |
+| English (UK) | alice, emma, isabella, lily, daniel, fable, george, lewis |
+| German | dora, alex, santa |
+| French | siwis |
+| Greek | alpha-f, beta-f, omega-m, psi-m |
+| Italian | sara, nicola |
+| Japanese | alpha-f, gongitsune, nezumi, tebukuro, kumo |
+| Portuguese (BR) | dora, alex, santa |
+| Chinese (Simplified) | xiaobei, xiaoni, xiaoxiao, xiaoyi, yunjian, yunxi, yunxia, yunyang |
+
+### Kitten TTS Voices
+
+| Language | Voices |
+|---|---|
+| English (US) | bella, jasper, luna, bruno, rosie, hugo, kiki, leo |
+
+The default voice is `en-US-heart-kokoro`.
+
+## App
+
+The Maise app provides a simple interface for:
+- Selecting a voice from the full list
+- Entering text and previewing speech synthesis directly in-app
+- Opening Android TTS settings to configure Maise as the system default
+
+The selected voice is persisted and shared with the background TTS service so your preference is respected system-wide.
 
 ## Cloning
-To clone the repository, use the following command:
 
 ```bash
 git clone https://github.com/Mobile-Artificial-Intelligence/maise.git
 ```
 
 ## Building
-To build the project, navigate to the project directory and run:
 
 ```bash
 ./gradlew :app:assembleRelease
 ```
 
-The output apk will be located in `app/build/outputs/apk/release/app-release.apk` or `app/build/outputs/apk/debug/app-debug.apk`.
+The output APK will be at:
+- Release: `app/build/outputs/apk/release/app-release.apk`
+- Debug: `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Setup
-To use this app as a system speech service, you will need to set it as the default TTS engine in your device settings. You can do this by going to `Settings > Accessibility > Text-to-Speech Output` and selecting Maise as the default engine.
+
+To use Maise as your system TTS engine, set it as the default in your device settings:
+
+```
+Settings > Accessibility > Text-to-Speech Output
+```
+
+Select **Maise** as the preferred engine. After that, any app using the Android `TextToSpeech` API will use Maise automatically.
