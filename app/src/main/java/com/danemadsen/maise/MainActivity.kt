@@ -2,6 +2,7 @@ package com.danemadsen.maise
 
 import android.content.Intent
 import android.content.SharedPreferences
+import android.net.Uri
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioTrack
@@ -66,6 +67,9 @@ class MainActivity : AppCompatActivity() {
         binding.speakButton.setOnClickListener { onSpeakClicked() }
         binding.openSettingsButton.setOnClickListener {
             startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+        }
+        binding.reportButton.setOnClickListener {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Mobile-Artificial-Intelligence/maise/issues")))
         }
     }
 
