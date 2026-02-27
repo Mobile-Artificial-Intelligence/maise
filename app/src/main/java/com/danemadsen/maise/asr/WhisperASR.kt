@@ -5,6 +5,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.util.Log
+import com.danemadsen.maise.copyAssetToFile
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import kotlin.math.cos
