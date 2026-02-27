@@ -13,6 +13,11 @@ private const val STYLE_DIM = 256
 private const val MAX_PHONEME_LENGTH = 510
 const val SAMPLE_RATE = 24000
 
+fun splitSentences(text: String): List<String> {
+    val raw = text.split(Regex("(?<=[.!?])(?:\\s+|$)"))
+    return raw.map { it.trim() }.filter { it.isNotEmpty() }
+}
+
 /**
  * Full Kokoro TTS pipeline.
  *
