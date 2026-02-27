@@ -91,7 +91,7 @@ android {
         noCompress 'onnx', 'bin'
     }
 
-    assetPacks = [':open-phonemizer', ':kokoro', ':kitten', ':whisper']
+    assetPacks = [':open-phonemizer', ':kokoro', ':whisper']
 }
 
 dependencies {

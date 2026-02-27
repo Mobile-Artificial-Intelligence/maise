@@ -17,7 +17,7 @@ private const val INIT_TIMEOUT_MS = 2500L
 class MaiseTtsService : TextToSpeechService() {
 
     @Volatile
-    private var tts: TtsEngine? = null
+    private var tts: KokoroTTS? = null
 
     @Volatile
     private var isStopped = false
@@ -28,7 +28,7 @@ class MaiseTtsService : TextToSpeechService() {
         super.onCreate()
         Thread {
             try {
-                val engine = TtsEngine(applicationContext)
+                val engine = KokoroTTS(applicationContext)
                 synchronized(initLock) {
                     tts = engine
                     initLock.notifyAll()

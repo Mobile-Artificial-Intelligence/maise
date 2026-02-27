@@ -66,15 +66,6 @@ val ALL_VOICES: List<VoiceInfo> = listOf(
     VoiceInfo("zh-CN-yunxia-kokoro",      Locale.SIMPLIFIED_CHINESE),
     VoiceInfo("zh-CN-yunyang-kokoro",     Locale.SIMPLIFIED_CHINESE),
 
-    // ── Kitten TTS voices ─────────────────────────────────────────────────────
-    VoiceInfo("en-US-bella-kitten",       Locale.US),
-    VoiceInfo("en-US-jasper-kitten",      Locale.US),
-    VoiceInfo("en-US-luna-kitten",        Locale.US),
-    VoiceInfo("en-US-bruno-kitten",       Locale.US),
-    VoiceInfo("en-US-rosie-kitten",       Locale.US),
-    VoiceInfo("en-US-hugo-kitten",        Locale.US),
-    VoiceInfo("en-US-kiki-kitten",        Locale.US),
-    VoiceInfo("en-US-leo-kitten",         Locale.US),
 )
 
 fun findVoiceById(id: String): VoiceInfo? = ALL_VOICES.find { it.id == id }

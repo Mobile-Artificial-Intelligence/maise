@@ -29,7 +29,7 @@ class TtsFragment : Fragment() {
     private val binding get() = _binding!!
 
     private lateinit var prefs: SharedPreferences
-    private var tts: TtsEngine? = null
+    private var tts: KokoroTTS? = null
     private var audioTrack: AudioTrack? = null
 
     override fun onCreateView(
@@ -54,7 +54,7 @@ class TtsFragment : Fragment() {
         setStatus("Loading models\u2026")
         viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
             try {
-                tts = TtsEngine(requireContext().applicationContext)
+                tts = KokoroTTS(requireContext().applicationContext)
                 withContext(Dispatchers.Main) { setStatus("Ready") }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { setStatus("Error loading models: ${e.message}") }
