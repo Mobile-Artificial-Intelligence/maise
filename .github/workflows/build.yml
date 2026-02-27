@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - master
+      - main
     paths:
       - '.github/workflows/build.yml'
       - 'app/**'
@@ -17,7 +17,7 @@ on:
       - 'settings.gradle'
   pull_request:
     branches:
-      - master
+      - main
     paths:
       - '.github/workflows/build.yml'
       - 'app/**'
