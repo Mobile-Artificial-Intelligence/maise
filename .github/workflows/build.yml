@@ -101,8 +101,23 @@ jobs:
           mv release/universal.apk release/maise-arm64-v8a.apk
           rm release/maise.apks
 
+      - name: Upload Android
+        uses: actions/upload-artifact@v4
+        with:
+          name: maise-android
+          path: release
+          if-no-files-found: error
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: maise-release-apk
-          path: release
+          name: maise-apk
+          path: release/maise-arm64-v8a.apk
+          if-no-files-found: error
+
+      - name: Upload AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: maise-aab
+          path: release/maise-release.aab
+          if-no-files-found: error
