@@ -8,6 +8,7 @@ import android.util.Log
 import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.exp
