@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 /**
  * Character-level tokenizer for the Kokoro TTS model.

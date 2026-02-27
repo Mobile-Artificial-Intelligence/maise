@@ -21,7 +21,7 @@
         </activity>
 
         <service
-            android:name=".MaiseTtsService"
+            android:name=".tts.MaiseTtsService"
             android:label="@string/app_name"
             android:exported="true"
             android:permission="android.permission.BIND_TEXT_TO_SPEECH_SERVICE">
@@ -35,7 +35,7 @@
         </service>
 
         <service
-            android:name=".MaiseAsrService"
+            android:name=".asr.MaiseAsrService"
             android:label="@string/app_name"
             android:exported="true"
             android:permission="android.permission.BIND_RECOGNITION_SERVICE">

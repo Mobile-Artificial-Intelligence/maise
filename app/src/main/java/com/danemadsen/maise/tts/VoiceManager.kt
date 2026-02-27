@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 import java.util.Locale
 

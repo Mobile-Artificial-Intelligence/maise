@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 private val ABBREVIATIONS: Map<String, String> = mapOf(
     "mrs"    to "misess",

@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 import android.media.AudioFormat
 import android.speech.tts.SynthesisCallback

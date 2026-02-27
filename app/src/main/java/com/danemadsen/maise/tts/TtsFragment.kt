@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 import android.content.Intent
 import android.content.SharedPreferences

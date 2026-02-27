@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 data class TokenizerConfig(
     val textSymbols: Map<String, Int>,

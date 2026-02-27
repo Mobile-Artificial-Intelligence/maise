@@ -1,4 +1,4 @@
-package com.danemadsen.maise
+package com.danemadsen.maise.tts
 
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
