@@ -1,0 +1,10 @@
+plugins {
+    id 'com.android.asset-pack'
+}
+
+assetPack {
+    packName = "whisper"
+    dynamicDelivery {
+        deliveryType = "install-time"
+    }
+}
