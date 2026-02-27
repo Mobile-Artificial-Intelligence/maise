@@ -291,7 +291,7 @@ class WhisperASR(context: Context) {
         val textTokens = mutableListOf<Int>()
 
         try {
-            repeat(MAX_NEW_TOKENS) {
+            for (i in 0 until MAX_NEW_TOKENS) {
                 val inputIdsBuf = LongBuffer.wrap(LongArray(allTokens.size) { i -> allTokens[i].toLong() })
                 val inputIdsTensor = OnnxTensor.createTensor(
                     env, inputIdsBuf, longArrayOf(1, allTokens.size.toLong())
@@ -308,7 +308,7 @@ class WhisperASR(context: Context) {
                 decoderResult.close()
 
                 allTokens.add(nextToken)
-                if (nextToken == WHISPER_TOKEN_EOT) return@repeat
+                if (nextToken == WHISPER_TOKEN_EOT) break
                 if (nextToken < WHISPER_TOKEN_EOT) textTokens.add(nextToken)
                 // Timestamp or other special token: skip from text but keep in sequence
             }
