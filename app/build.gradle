@@ -91,7 +91,7 @@ android {
         noCompress 'onnx', 'bin'
     }
 
-    assetPacks = [':open-phonemizer', ':kokoro', ':kitten']
+    assetPacks = [':open-phonemizer', ':kokoro', ':kitten', ':whisper']
 }
 
 dependencies {
@@ -104,4 +104,6 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
 
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:latest.release'
+    implementation 'androidx.viewpager2:viewpager2:1.0.0'
+    implementation 'androidx.fragment:fragment-ktx:1.6.2'
 }

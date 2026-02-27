@@ -1,105 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView
+<LinearLayout
     xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/app_background"
-    android:fillViewport="true">
+    android:orientation="vertical"
+    android:background="@color/app_background">
 
-    <LinearLayout
+    <com.google.android.material.tabs.TabLayout
+        android:id="@+id/tabLayout"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:gravity="center_horizontal">
+        android:background="@color/app_background"
+        app:tabTextColor="@color/hint_text"
+        app:tabSelectedTextColor="@color/on_surface"
+        app:tabIndicatorColor="@color/on_surface"
+        app:tabIndicatorFullWidth="false" />
 
-        <Spinner
-            android:id="@+id/voiceSpinner"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:popupBackground="@color/surface" />
+    <androidx.viewpager2.widget.ViewPager2
+        android:id="@+id/viewPager"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="Enter text to speak"
-            android:layout_marginBottom="20dp"
-            style="@style/RoundedFilledInput">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/inputText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:inputType="textMultiLine"
-                android:minLines="4"
-                android:gravity="top"
-                android:textColor="@color/on_surface"
-                android:background="@null" />
-
-        </com.google.android.material.textfield.TextInputLayout>
-
-        <Button
-            android:id="@+id/speakButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Speak" />
-
-        <TextView
-            android:id="@+id/statusText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text=""
-            android:textColor="@color/hint_text"
-            android:textSize="13sp"
-            android:gravity="center" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="20dp"
-            android:background="@color/surface" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:text="To use Maise as your device&#8217;s text-to-speech engine, open Android TTS settings and select Maise as the preferred engine."
-            android:textColor="@color/hint_text"
-            android:textSize="13sp"
-            android:lineSpacingMultiplier="1.4" />
-
-        <Button
-            android:id="@+id/openSettingsButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Open TTS Settings"
-            style="?attr/materialButtonOutlinedStyle" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginBottom="20dp"
-            android:background="@color/surface" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="12dp"
-            android:text="Found a word that isn&#8217;t pronounced right? Report it to GitHub."
-            android:textColor="@color/hint_text"
-            android:textSize="13sp"
-            android:lineSpacingMultiplier="1.4" />
-
-        <Button
-            android:id="@+id/reportButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="Report on GitHub"
-            style="?attr/materialButtonOutlinedStyle" />
-
-    </LinearLayout>
-
-</ScrollView>
+</LinearLayout>
