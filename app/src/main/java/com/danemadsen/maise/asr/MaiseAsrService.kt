@@ -1,16 +1,22 @@
 package com.danemadsen.maise.asr
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.Bundle
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.danemadsen.maise.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,6 +25,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 private const val TAG = "MaiseAsrService"
+private const val NOTIF_CHANNEL = "maise_asr"
+private const val NOTIF_ID = 1001
 
 // Recording parameters — 16 kHz mono 16-bit matches Whisper directly (no resampling)
 private const val REC_SAMPLE_RATE = 16000
@@ -53,6 +61,11 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onCreate() {
         super.onCreate()
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(
+            NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
+                .apply { setSound(null, null) }
+        )
         // Initialise the ASR engine on a background thread so service start is fast
         scope.launch {
             try {
@@ -84,14 +97,20 @@ class MaiseAsrService : RecognitionService() {
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
         Log.d(TAG, "onStartListening")
 
+        // Promote to foreground before any mic access — required on Android 9+ for
+        // background services, and mandatory on Android 14+ with FOREGROUND_SERVICE_MICROPHONE.
+        startForegroundCompat()
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
+            stopForegroundCompat()
             listener.error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
             return
         }
 
         if (isRecording) {
+            stopForegroundCompat()
             listener.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
             return
         }
@@ -104,6 +123,7 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onStopListening")
         val samples = finishRecording()
         if (samples == null || samples.isEmpty()) {
+            stopForegroundCompat()
             listener.error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
             return
         }
@@ -114,6 +134,39 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onCancel")
         activeJob?.cancel()
         stopRecording()
+        stopForegroundCompat()
+    }
+
+    // -------------------------------------------------------------------------
+    // Foreground service helpers
+    // -------------------------------------------------------------------------
+
+    private fun startForegroundCompat() {
+        val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText("Listening…")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground failed", e)
+        }
+    }
+
+    private fun stopForegroundCompat() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -216,6 +269,7 @@ class MaiseAsrService : RecognitionService() {
 
             val engine = asr
             if (engine == null) {
+                stopForegroundCompat()
                 listener.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
                 return@launch
             }
@@ -223,6 +277,7 @@ class MaiseAsrService : RecognitionService() {
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 if (text.isBlank()) {
+                    stopForegroundCompat()
                     listener.error(SpeechRecognizer.ERROR_NO_MATCH)
                     return@launch
                 }
@@ -236,9 +291,11 @@ class MaiseAsrService : RecognitionService() {
                     SpeechRecognizer.CONFIDENCE_SCORES,
                     floatArrayOf(1.0f)
                 )
+                stopForegroundCompat()
                 listener.results(bundle)
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed", e)
+                stopForegroundCompat()
                 listener.error(SpeechRecognizer.ERROR_CLIENT)
             }
         }
