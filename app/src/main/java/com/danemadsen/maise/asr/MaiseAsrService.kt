@@ -152,7 +152,12 @@ class MaiseAsrService : RecognitionService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // Android 14+: SHORT_SERVICE can start from background without the "eligible state"
+                // restriction that MICROPHONE type requires (visible activity). It is still
+                // considered foreground for all hardware-sensor access including the microphone.
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             } else {
                 startForeground(NOTIF_ID, notification)
