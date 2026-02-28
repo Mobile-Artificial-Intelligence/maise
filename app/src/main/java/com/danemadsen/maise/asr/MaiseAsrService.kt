@@ -1,23 +1,17 @@
 package com.danemadsen.maise.asr
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.os.Build
 import android.os.Bundle
 import android.os.RemoteException
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.danemadsen.maise.R
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,8 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 private const val TAG = "MaiseAsrService"
-private const val NOTIF_CHANNEL = "maise_asr"
-private const val NOTIF_ID = 1001
 
 // Recording parameters — 16 kHz mono 16-bit matches Whisper directly (no resampling)
 private const val REC_SAMPLE_RATE = 16000
@@ -37,10 +29,10 @@ private const val MAX_RECORD_SECONDS = 30
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
  *
- * Why startForeground() is required here:
- * The user grants RECORD_AUDIO as "While using the app". Android's AppOps layer enforces this
- * by returning PERMISSION_DENIED for background processes, so checkSelfPermission fails unless
- * the service explicitly calls startForeground() to satisfy the "in use" requirement.
+ * Apps extending RecognitionService do NOT need to call startForeground(). The Android
+ * framework automatically grants temporary microphone access when the service is bound
+ * (Android 12+). Calling startForeground() from here interferes with the base class's
+ * internal state machine and causes spurious onCancel() calls.
  */
 class MaiseAsrService : RecognitionService() {
 
@@ -64,10 +56,6 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onCreate() {
         super.onCreate()
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
-                .apply { setSound(null, null) }
-        )
         scope.launch {
             try {
                 val engine = WhisperASR(applicationContext)
@@ -98,21 +86,15 @@ class MaiseAsrService : RecognitionService() {
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
         Log.d(TAG, "onStartListening")
 
-        // Promote to foreground first so Android's AppOps layer honours the
-        // "While using the app" RECORD_AUDIO grant for this background service.
-        startListeningForeground()
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
-            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
             return
         }
 
         if (isRecording) {
-            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
             return
         }
@@ -125,7 +107,6 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onStopListening")
         val samples = finishRecording()
         if (samples == null || samples.isEmpty()) {
-            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
             return
         }
@@ -136,44 +117,6 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onCancel")
         activeJob?.cancel()
         stopListeningInternal()
-        stopListeningForeground()
-    }
-
-    // -------------------------------------------------------------------------
-    // Foreground service
-    // -------------------------------------------------------------------------
-
-    private fun startListeningForeground() {
-        val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText("Listening…")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Android 14+: SHORT_SERVICE can start from background without the "eligible state"
-                // restriction that MICROPHONE type requires (visible activity). It is still
-                // considered foreground for all hardware-sensor access including the microphone.
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "startForeground failed: ${e.message}")
-        }
-    }
-
-    private fun stopListeningForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -187,7 +130,6 @@ class MaiseAsrService : RecognitionService() {
             AudioFormat.ENCODING_PCM_16BIT
         )
         if (minBuf == AudioRecord.ERROR_BAD_VALUE || minBuf == AudioRecord.ERROR) {
-            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -203,7 +145,6 @@ class MaiseAsrService : RecognitionService() {
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
-            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -237,8 +178,10 @@ class MaiseAsrService : RecognitionService() {
                 }
             }
 
-            rec.stop()
-            rec.release()
+            // Use runCatching: stopListeningInternal() may have already stopped/released
+            // the recorder (e.g. if onCancel fired concurrently), causing IllegalStateException.
+            runCatching { rec.stop() }
+            runCatching { rec.release() }
             audioRecord = null
             recordedSamples = if (total > 0) buffer.copyOf(total) else null
             isRecording = false
@@ -279,7 +222,6 @@ class MaiseAsrService : RecognitionService() {
 
             val engine = asr
             if (engine == null) {
-                stopListeningForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
                 return@launch
             }
@@ -287,7 +229,6 @@ class MaiseAsrService : RecognitionService() {
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 if (text.isBlank()) {
-                    stopListeningForeground()
                     listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
                     return@launch
                 }
@@ -301,11 +242,9 @@ class MaiseAsrService : RecognitionService() {
                     SpeechRecognizer.CONFIDENCE_SCORES,
                     floatArrayOf(1.0f)
                 )
-                stopListeningForeground()
                 listener.safe { results(bundle) }
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed", e)
-                stopListeningForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
             }
         }
