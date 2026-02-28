@@ -1,22 +1,18 @@
 package com.danemadsen.maise.asr
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
-import android.os.Build
 import android.os.Bundle
+import android.os.RemoteException
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
-import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import com.danemadsen.maise.R
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -25,8 +21,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 private const val TAG = "MaiseAsrService"
-private const val NOTIF_CHANNEL = "maise_asr"
-private const val NOTIF_ID = 1001
 
 // Recording parameters — 16 kHz mono 16-bit matches Whisper directly (no resampling)
 private const val REC_SAMPLE_RATE = 16000
@@ -40,12 +34,24 @@ private const val MAX_RECORD_SECONDS = 30
  *  2. Stops recording and transcribes on [onStopListening]
  *  3. Returns results via [Callback.results]
  *
- * The RECORD_AUDIO permission must be granted to this app by the user (e.g. through
- * [MainActivity]) before speech recognition will work.
+ * Process elevation note: when bound by a foreground client, Android automatically elevates
+ * this process to IMPORTANCE_FOREGROUND_SERVICE — sufficient for microphone access on
+ * Android 9+. startForeground() is therefore not needed in the RecognitionService itself
+ * (confirmed by WhisperIME, dicio, and other working implementations).
+ *
+ * The RECORD_AUDIO permission must be granted to this app via [MainActivity] before the
+ * service will work, since services cannot show permission dialogs themselves.
  */
 class MaiseAsrService : RecognitionService() {
 
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    // Catch any exception that escapes a coroutine so the service process never crashes.
+    // A crash causes the SpeechRecognizer client to receive ERROR_CLIENT (5) via
+    // onServiceDisconnected(), which is the symptom we are fixing.
+    private val exceptionHandler = CoroutineExceptionHandler { _, t ->
+        Log.e(TAG, "Uncaught coroutine exception", t)
+    }
+
+    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
 
     @Volatile private var asr: WhisperASR? = null
     @Volatile private var audioRecord: AudioRecord? = null
@@ -61,12 +67,7 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onCreate() {
         super.onCreate()
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(
-            NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
-                .apply { setSound(null, null) }
-        )
-        // Initialise the ASR engine on a background thread so service start is fast
+        // Initialise the ASR engine on a background thread so service start is fast.
         scope.launch {
             try {
                 val engine = WhisperASR(applicationContext)
@@ -97,25 +98,20 @@ class MaiseAsrService : RecognitionService() {
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
         Log.d(TAG, "onStartListening")
 
-        // Promote to foreground before any mic access — required on Android 9+ for
-        // background services, and mandatory on Android 14+ with FOREGROUND_SERVICE_MICROPHONE.
-        startForegroundCompat()
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED) {
+            != PackageManager.PERMISSION_GRANTED
+        ) {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
-            stopForegroundCompat()
-            listener.error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS)
+            listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
             return
         }
 
         if (isRecording) {
-            stopForegroundCompat()
-            listener.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+            listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
             return
         }
 
-        listener.readyForSpeech(Bundle())
+        listener.safe { readyForSpeech(Bundle()) }
         startRecording(listener)
     }
 
@@ -123,8 +119,7 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onStopListening")
         val samples = finishRecording()
         if (samples == null || samples.isEmpty()) {
-            stopForegroundCompat()
-            listener.error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT)
+            listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
             return
         }
         transcribeAsync(samples, listener)
@@ -134,39 +129,6 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onCancel")
         activeJob?.cancel()
         stopRecording()
-        stopForegroundCompat()
-    }
-
-    // -------------------------------------------------------------------------
-    // Foreground service helpers
-    // -------------------------------------------------------------------------
-
-    private fun startForegroundCompat() {
-        val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText("Listening…")
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "startForeground failed", e)
-        }
-    }
-
-    private fun stopForegroundCompat() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
     }
 
     // -------------------------------------------------------------------------
@@ -180,7 +142,7 @@ class MaiseAsrService : RecognitionService() {
             AudioFormat.ENCODING_PCM_16BIT
         )
         if (minBuf == AudioRecord.ERROR_BAD_VALUE || minBuf == AudioRecord.ERROR) {
-            listener.error(SpeechRecognizer.ERROR_AUDIO)
+            listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
 
@@ -195,7 +157,7 @@ class MaiseAsrService : RecognitionService() {
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
-            listener.error(SpeechRecognizer.ERROR_AUDIO)
+            listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
 
@@ -204,12 +166,12 @@ class MaiseAsrService : RecognitionService() {
 
         activeJob = scope.launch {
             val maxSamples = REC_SAMPLE_RATE * MAX_RECORD_SECONDS
-            val buffer     = ShortArray(maxSamples)
-            val chunk      = ShortArray(1024)
-            var total      = 0
+            val buffer = ShortArray(maxSamples)
+            val chunk  = ShortArray(1024)
+            var total  = 0
 
             rec.startRecording()
-            listener.beginningOfSpeech()
+            listener.safe { beginningOfSpeech() }
             Log.d(TAG, "Recording started")
 
             while (isRecording && total < maxSamples) {
@@ -218,9 +180,15 @@ class MaiseAsrService : RecognitionService() {
                 chunk.copyInto(buffer, total, 0, read)
                 total += read
 
-                // Notify RMS level to keep the client UI alive
                 val rms = computeRms(chunk, read)
-                listener.rmsChanged(rms)
+                // If the client died, stop recording rather than crashing the coroutine.
+                try {
+                    listener.rmsChanged(rms)
+                } catch (e: RemoteException) {
+                    Log.w(TAG, "Client disconnected during recording")
+                    isRecording = false
+                    break
+                }
             }
 
             rec.stop()
@@ -229,14 +197,14 @@ class MaiseAsrService : RecognitionService() {
 
             recordedSamples = if (total > 0) buffer.copyOf(total) else null
             isRecording = false
-            Log.d(TAG, "Recording stopped, ${total} samples")
+            Log.d(TAG, "Recording stopped, $total samples")
         }
     }
 
     /** Stop recording and return the captured samples (or null). */
     private fun finishRecording(): ShortArray? {
         isRecording = false
-        // Wait briefly for the recording coroutine to exit
+        // Wait briefly for the recording coroutine to exit.
         var waited = 0
         while (audioRecord != null && waited < 500) {
             Thread.sleep(10); waited += 10
@@ -260,25 +228,23 @@ class MaiseAsrService : RecognitionService() {
 
     private fun transcribeAsync(samples: ShortArray, listener: Callback) {
         activeJob = scope.launch {
-            listener.endOfSpeech()
+            listener.safe { endOfSpeech() }
 
-            // Wait up to 5 s for the engine to initialise (handles cold-start)
+            // Wait up to 5 s for the engine to initialise (handles cold-start).
             synchronized(initLock) {
                 if (asr == null) initLock.wait(5000L)
             }
 
             val engine = asr
             if (engine == null) {
-                stopForegroundCompat()
-                listener.error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY)
+                listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
                 return@launch
             }
 
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 if (text.isBlank()) {
-                    stopForegroundCompat()
-                    listener.error(SpeechRecognizer.ERROR_NO_MATCH)
+                    listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
                     return@launch
                 }
 
@@ -291,12 +257,10 @@ class MaiseAsrService : RecognitionService() {
                     SpeechRecognizer.CONFIDENCE_SCORES,
                     floatArrayOf(1.0f)
                 )
-                stopForegroundCompat()
-                listener.results(bundle)
+                listener.safe { results(bundle) }
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed", e)
-                stopForegroundCompat()
-                listener.error(SpeechRecognizer.ERROR_CLIENT)
+                listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
             }
         }
     }
@@ -304,6 +268,18 @@ class MaiseAsrService : RecognitionService() {
     // -------------------------------------------------------------------------
     // Utilities
     // -------------------------------------------------------------------------
+
+    /**
+     * Invoke [block] on this [Callback], swallowing any [Exception] so that a dead or
+     * misbehaving client can never crash the service process.
+     */
+    private inline fun Callback.safe(block: Callback.() -> Unit) {
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.w(TAG, "Callback IPC failed: ${e.message}")
+        }
+    }
 
     private fun computeRms(buf: ShortArray, len: Int): Float {
         var sum = 0.0
