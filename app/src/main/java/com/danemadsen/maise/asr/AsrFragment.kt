@@ -8,6 +8,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -67,12 +68,26 @@ class AsrFragment : Fragment() {
             if (isRecording) stopRecording() else checkPermissionAndRecord()
         }
 
-        binding.openAsrSettingsButton.setOnClickListener {
+        binding.openImeSettingsButton.setOnClickListener {
             try {
-                startActivity(Intent("android.settings.VOICE_INPUT_SETTINGS"))
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             } catch (e: ActivityNotFoundException) {
-                startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
+                startActivity(Intent(Settings.ACTION_SETTINGS))
             }
+        }
+
+        binding.openAsrSettingsButton.setOnClickListener {
+            // Try the most direct path to the speech recognition service selector first,
+            // then fall back to broader Language & Input settings.
+            val actions = listOf(
+                "android.settings.VOICE_INPUT_SETTINGS",
+                "android.settings.LANGUAGE_INPUT_SETTINGS"
+            )
+            for (action in actions) {
+                try { startActivity(Intent(action)); return@setOnClickListener }
+                catch (_: ActivityNotFoundException) {}
+            }
+            startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
 

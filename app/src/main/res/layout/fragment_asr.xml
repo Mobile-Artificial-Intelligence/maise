@@ -62,7 +62,30 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="12dp"
-            android:text="To use Maise as your device&#8217;s speech recognition engine, open Android speech settings and select Maise."
+            android:text="Enable Maise as a keyboard so voice recognition works across all apps. Go to keyboard settings and add Maise to your active keyboards."
+            android:textColor="@color/hint_text"
+            android:textSize="13sp"
+            android:lineSpacingMultiplier="1.4" />
+
+        <Button
+            android:id="@+id/openImeSettingsButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open Keyboard Settings"
+            style="?attr/materialButtonOutlinedStyle" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="20dp"
+            android:layout_marginBottom="20dp"
+            android:background="@color/surface" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="12dp"
+            android:text="To use Maise as your device&#8217;s speech recognition engine, open Language &amp; Input settings and select Maise as the speech recognition service."
             android:textColor="@color/hint_text"
             android:textSize="13sp"
             android:lineSpacingMultiplier="1.4" />
