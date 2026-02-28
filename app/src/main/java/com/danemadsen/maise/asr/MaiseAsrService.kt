@@ -4,6 +4,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.content.pm.PackageManager
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -13,7 +14,9 @@ import android.os.RemoteException
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
+import android.Manifest
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.danemadsen.maise.R
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -119,6 +122,15 @@ class MaiseAsrService : RecognitionService() {
         // MICROPHONE type is required to pass RecognitionService's RECORD_AUDIO
         // AppOps data-delivery check that runs immediately after this method returns.
         startListeningForeground()
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "RECORD_AUDIO permission not granted")
+            stopListeningForeground()
+            listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
+            return
+        }
 
         if (isRecording) {
             stopListeningForeground()
