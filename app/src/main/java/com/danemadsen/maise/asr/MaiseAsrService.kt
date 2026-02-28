@@ -1,5 +1,6 @@
 package com.danemadsen.maise.asr
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
@@ -34,23 +35,25 @@ private const val MAX_RECORD_SECONDS = 30
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
  *
- * Why startForeground(MICROPHONE) is required:
- * After onStartListening() returns, the RecognitionService base class runs a strict
- * AppOps data-delivery check for RECORD_AUDIO. Only FOREGROUND_SERVICE_TYPE_MICROPHONE
- * grants RECORD_AUDIO AppOps access from background; other types (including SHORT_SERVICE)
- * do not satisfy this check → base class calls onCancel().
+ * Foreground service strategy (two-phase):
  *
- * Why MICROPHONE type works on Android 14+ (API 34+) without a visible activity:
- * The system's SpeechRecognitionManagerService binds to this service with
- * BIND_INCLUDE_CAPABILITIES | BIND_FOREGROUND_SERVICE when this service is the
- * configured default recognizer (Settings.Secure.VOICE_RECOGNITION_SERVICE). This
- * propagates the calling app's foreground state to our process, satisfying the
- * "eligible state" check for FOREGROUND_SERVICE_TYPE_MICROPHONE.
+ * 1. DATA_SYNC foreground (always-on):
+ *    onStartCommand() enters FOREGROUND_SERVICE_TYPE_DATA_SYNC immediately. DATA_SYNC has NO
+ *    "eligible state" restriction on API 29–34, so it succeeds regardless of whether the app
+ *    has a visible activity. This keeps the service continuously foreground between sessions.
+ *
+ * 2. MICROPHONE foreground (during recognition only):
+ *    onStartListening() upgrades to FOREGROUND_SERVICE_TYPE_MICROPHONE. This is the only type
+ *    that satisfies the RECORD_AUDIO AppOps data-delivery check that RecognitionService runs
+ *    immediately after onStartListening() returns. On API 34+, MICROPHONE requires "eligible
+ *    state"; that condition is met because DATA_SYNC is already running (eligible state
+ *    condition: "another non-shortService foreground service is already running in this app").
+ *    After the session ends, we downgrade back to DATA_SYNC.
  *
  * Why the service must be pre-started from MainActivity:
- * startForeground() inside a bound-only service still requires the service to have
- * been started (via startService/startForegroundService) on some API levels.
- * We call startService from MainActivity.onCreate() with START_STICKY.
+ *    startForeground() requires the service to be in "started" state (via startService).
+ *    We call startService from MainActivity.onCreate() with START_STICKY so the service
+ *    survives independently of the bound client.
  */
 class MaiseAsrService : RecognitionService() {
 
@@ -75,10 +78,6 @@ class MaiseAsrService : RecognitionService() {
     override fun onCreate() {
         super.onCreate()
         // Self-start so the service is in "started" state before onStartListening() is called.
-        // startService() posts onStartCommand() to the main thread's Handler immediately.
-        // The speech client can only call startListening() AFTER receiving the IBinder from
-        // onBind(), which happens after onCreate() returns — so onStartCommand() is always
-        // processed first, guaranteeing startForeground(SHORT_SERVICE) will succeed.
         runCatching { startService(Intent(this, MaiseAsrService::class.java)) }
 
         getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -101,9 +100,11 @@ class MaiseAsrService : RecognitionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Called when MainActivity pre-starts us. Returning START_STICKY ensures the
-        // system restarts us if killed, keeping us in "started" state for future
-        // startForeground(SHORT_SERVICE) calls in onStartListening().
+        // Enter DATA_SYNC foreground immediately. DATA_SYNC has no "eligible state" restriction,
+        // so this succeeds on any restart (START_STICKY or initial start from MainActivity).
+        // This persistent FGS is what satisfies the eligible state check for MICROPHONE type
+        // when onStartListening() is called later.
+        enterIdleForeground()
         return START_STICKY
     }
 
@@ -120,19 +121,16 @@ class MaiseAsrService : RecognitionService() {
     // -------------------------------------------------------------------------
 
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
-        val defaultRecognizer = android.provider.Settings.Secure.getString(
-            contentResolver, "voice_recognition_service"
-        )
-        Log.d(TAG, "onStartListening — default recognizer: $defaultRecognizer")
+        Log.d(TAG, "onStartListening")
 
-        // Must call startForeground() here, BEFORE returning, so our process state
-        // is elevated before the base class runs checkPermissionAndStartDataDelivery()
-        // (which happens after this method returns). Without foreground status that
-        // AppOps check fails → base class calls onCancel().
-        startListeningForeground()
+        // Upgrade from DATA_SYNC → MICROPHONE. Eligible state is satisfied because
+        // DATA_SYNC is already running (onStartCommand always enters it first).
+        // MICROPHONE type is the only type that passes RecognitionService's
+        // RECORD_AUDIO AppOps data-delivery check that runs after this method returns.
+        enterListeningForeground()
 
         if (isRecording) {
-            stopListeningForeground()
+            enterIdleForeground()
             listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
             return
         }
@@ -145,7 +143,7 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onStopListening")
         val samples = finishRecording()
         if (samples == null || samples.isEmpty()) {
-            stopListeningForeground()
+            enterIdleForeground()
             listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
             return
         }
@@ -156,45 +154,49 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onCancel")
         activeJob?.cancel()
         stopListeningInternal()
-        stopListeningForeground()
+        enterIdleForeground()
     }
 
     // -------------------------------------------------------------------------
     // Foreground service
     // -------------------------------------------------------------------------
 
-    private fun startListeningForeground() {
-        val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
+    /** DATA_SYNC foreground — no eligible state restriction, runs between sessions. */
+    private fun enterIdleForeground() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(NOTIF_ID, buildNotification("Ready"), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            } else {
+                startForeground(NOTIF_ID, buildNotification("Ready"))
+            }
+            Log.d(TAG, "enterIdleForeground succeeded")
+        } catch (e: Exception) {
+            Log.w(TAG, "enterIdleForeground failed: ${e.message}")
+        }
+    }
+
+    /** MICROPHONE foreground — grants RECORD_AUDIO AppOps, used only during recognition. */
+    private fun enterListeningForeground() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                startForeground(NOTIF_ID, buildNotification("Listening…"), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, buildNotification("Listening…"))
+            }
+            Log.d(TAG, "enterListeningForeground succeeded")
+        } catch (e: Exception) {
+            Log.w(TAG, "enterListeningForeground failed: ${e.message}")
+        }
+    }
+
+    private fun buildNotification(text: String): Notification =
+        NotificationCompat.Builder(this, NOTIF_CHANNEL)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText("Listening…")
+            .setContentText(text)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // API 30+: MICROPHONE type grants RECORD_AUDIO AppOps access for background
-                // recording. On API 34+, eligible state is required; it is satisfied when the
-                // system binds us with BIND_INCLUDE_CAPABILITIES (which happens when we are the
-                // device's configured default recognizer) and the calling app is in the foreground.
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-            } else {
-                startForeground(NOTIF_ID, notification)
-            }
-            Log.d(TAG, "startForeground succeeded")
-        } catch (e: Exception) {
-            Log.w(TAG, "startForeground failed: ${e.message}")
-        }
-    }
-
-    private fun stopListeningForeground() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
-    }
 
     // -------------------------------------------------------------------------
     // Audio recording
@@ -207,7 +209,7 @@ class MaiseAsrService : RecognitionService() {
             AudioFormat.ENCODING_PCM_16BIT
         )
         if (minBuf == AudioRecord.ERROR_BAD_VALUE || minBuf == AudioRecord.ERROR) {
-            stopListeningForeground()
+            enterIdleForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -223,7 +225,7 @@ class MaiseAsrService : RecognitionService() {
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
-            stopListeningForeground()
+            enterIdleForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -301,7 +303,7 @@ class MaiseAsrService : RecognitionService() {
 
             val engine = asr
             if (engine == null) {
-                stopListeningForeground()
+                enterIdleForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
                 return@launch
             }
@@ -309,7 +311,7 @@ class MaiseAsrService : RecognitionService() {
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 if (text.isBlank()) {
-                    stopListeningForeground()
+                    enterIdleForeground()
                     listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
                     return@launch
                 }
@@ -323,11 +325,11 @@ class MaiseAsrService : RecognitionService() {
                     SpeechRecognizer.CONFIDENCE_SCORES,
                     floatArrayOf(1.0f)
                 )
-                stopListeningForeground()
+                enterIdleForeground()
                 listener.safe { results(bundle) }
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed", e)
-                stopListeningForeground()
+                enterIdleForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
             }
         }
