@@ -1,6 +1,7 @@
 package com.danemadsen.maise.asr
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioFormat
@@ -67,11 +68,9 @@ class AsrFragment : Fragment() {
         }
 
         binding.openAsrSettingsButton.setOnClickListener {
-            // ACTION_VOICE_INPUT_SETTINGS is not a public constant; use the known string
-            val intent = Intent("android.settings.VOICE_INPUT_SETTINGS")
-            if (intent.resolveActivity(requireContext().packageManager) != null) {
-                startActivity(intent)
-            } else {
+            try {
+                startActivity(Intent("android.settings.VOICE_INPUT_SETTINGS"))
+            } catch (e: ActivityNotFoundException) {
                 startActivity(Intent(android.provider.Settings.ACTION_SETTINGS))
             }
         }
