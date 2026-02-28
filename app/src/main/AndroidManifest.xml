@@ -42,6 +42,27 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!--
+          InputMethodService: when the keyboard is showing, the system binds with
+          BIND_SHOWING_UI which elevates the UID to PROCESS_STATE_TOP. At TOP state
+          the RECORD_AUDIO while-in-use AppOps check passes, allowing MaiseAsrService
+          to record without needing FOREGROUND_SERVICE_TYPE_MICROPHONE eligible state.
+        -->
+        <service
+            android:name=".asr.MaiseInputMethodService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:foregroundServiceType="microphone"
+            android:permission="android.permission.BIND_INPUT_METHOD">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/maise_input_method" />
+        </service>
+
         <service
             android:name=".asr.MaiseAsrService"
             android:label="@string/app_name"

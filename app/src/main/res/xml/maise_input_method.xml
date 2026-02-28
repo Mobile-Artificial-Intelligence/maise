@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Input method declaration for MaiseInputMethodService.
+  The "voice" subtype with isAuxiliary="true" marks this as a supplementary
+  input method (not a primary keyboard), so it appears in the keyboard switcher
+  alongside the user's regular keyboard.
+-->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.danemadsen.maise.MainActivity">
+
+    <subtype
+        android:label="Voice"
+        android:imeSubtypeLocale=""
+        android:imeSubtypeMode="voice"
+        android:isAuxiliary="true"
+        android:overridesImplicitlyEnabledSubtype="true" />
+
+</input-method>

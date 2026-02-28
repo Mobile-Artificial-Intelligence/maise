@@ -49,18 +49,11 @@ class MainActivity : AppCompatActivity() {
             requestRecordAudio.launch(Manifest.permission.RECORD_AUDIO)
         }
 
-        // Start the keep-alive service first so it enters DATA_SYNC foreground before any
-        // recognition session begins. MaiseAsrService upgrades to MICROPHONE foreground during
-        // recognition; the "another non-shortService FGS is active" eligible state condition
-        // is satisfied by KeepAliveService being a separate component running as DATA_SYNC.
+        // Keep-alive service: DATA_SYNC foreground, keeps the process alive on restarts.
         startService(Intent(this, MaiseKeepAliveService::class.java))
 
-        // startForegroundService (not startService) so the service's onStartCommand()
-        // can call startForeground(MICROPHONE) with eligible state — visible activity
-        // satisfies the PROCESS_STATE_TOP requirement. This sets
-        // mAllowWhileInUsePermissionInFgs = true on the ServiceRecord, which means all
-        // subsequent startForeground(MICROPHONE) calls (notification updates between
-        // sessions) skip the eligible state check entirely.
-        startForegroundService(Intent(this, MaiseAsrService::class.java))
+        // Pre-start the ASR service so it is in "started" state before any speech
+        // client binds to it. START_STICKY ensures the service restarts if killed.
+        startService(Intent(this, MaiseAsrService::class.java))
     }
 }
