@@ -125,15 +125,6 @@ class MaiseAsrService : RecognitionService() {
         // AppOps check fails → base class calls onCancel().
         startListeningForeground()
 
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.e(TAG, "RECORD_AUDIO permission not granted")
-            stopListeningForeground()
-            listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
-            return
-        }
-
         if (isRecording) {
             stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
