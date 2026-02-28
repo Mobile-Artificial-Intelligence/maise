@@ -55,8 +55,12 @@ class MainActivity : AppCompatActivity() {
         // is satisfied by KeepAliveService being a separate component running as DATA_SYNC.
         startService(Intent(this, MaiseKeepAliveService::class.java))
 
-        // Pre-start the ASR service so it is in "started" state before any speech
-        // client binds to it. START_STICKY ensures the service restarts if killed.
-        startService(Intent(this, MaiseAsrService::class.java))
+        // startForegroundService (not startService) so the service's onStartCommand()
+        // can call startForeground(MICROPHONE) with eligible state — visible activity
+        // satisfies the PROCESS_STATE_TOP requirement. This sets
+        // mAllowWhileInUsePermissionInFgs = true on the ServiceRecord, which means all
+        // subsequent startForeground(MICROPHONE) calls (notification updates between
+        // sessions) skip the eligible state check entirely.
+        startForegroundService(Intent(this, MaiseAsrService::class.java))
     }
 }
