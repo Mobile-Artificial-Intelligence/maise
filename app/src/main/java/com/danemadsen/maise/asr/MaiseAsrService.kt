@@ -71,6 +71,13 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Self-start so the service is in "started" state before onStartListening() is called.
+        // startService() posts onStartCommand() to the main thread's Handler immediately.
+        // The speech client can only call startListening() AFTER receiving the IBinder from
+        // onBind(), which happens after onCreate() returns — so onStartCommand() is always
+        // processed first, guaranteeing startForeground(SHORT_SERVICE) will succeed.
+        runCatching { startService(Intent(this, MaiseAsrService::class.java)) }
+
         getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
                 .apply { setSound(null, null) }
