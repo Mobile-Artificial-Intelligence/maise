@@ -1,10 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.BLUETOOTH" />
+
+    <!--
+      QUERY_ALL_PACKAGES: without this, RecognitionService gets
+      "caller doesn't have permission: android.permission.RECORD_AUDIO"
+      when checkPermissionAndStartDataDelivery() resolves the caller's
+      attribution chain. Required by WhisperIMEplus for the same reason.
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:allowBackup="true"
@@ -12,6 +26,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:largeHeap="true"
         android:theme="@style/Theme.Maise">
 
         <activity
@@ -20,6 +35,23 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Floating activity that handles apps calling
+          startActivityForResult(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).
+          Uses a dialog/floating theme so it appears as an overlay.
+        -->
+        <activity
+            android:name=".asr.MaiseRecognizeActivity"
+            android:exported="true"
+            android:launchMode="singleInstance"
+            android:theme="@style/Theme.AppCompat.Dialog"
+            android:configChanges="orientation|screenLayout|screenSize|keyboardHidden">
+            <intent-filter>
+                <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
 
@@ -42,12 +74,6 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <!--
-          InputMethodService: when the keyboard is showing, the system binds with
-          BIND_SHOWING_UI which elevates the UID to PROCESS_STATE_TOP. At TOP state
-          the RECORD_AUDIO while-in-use AppOps check passes, allowing MaiseAsrService
-          to record without needing FOREGROUND_SERVICE_TYPE_MICROPHONE eligible state.
-        -->
         <service
             android:name=".asr.MaiseInputMethodService"
             android:exported="true"
@@ -56,7 +82,6 @@
             android:permission="android.permission.BIND_INPUT_METHOD">
             <intent-filter>
                 <action android:name="android.view.InputMethod" />
-                <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
             <meta-data
                 android:name="android.view.im"
@@ -67,6 +92,7 @@
             android:name=".asr.MaiseAsrService"
             android:label="@string/app_name"
             android:exported="true"
+            android:directBootAware="true"
             android:foregroundServiceType="microphone"
             android:permission="android.permission.RECORD_AUDIO">
             <intent-filter>

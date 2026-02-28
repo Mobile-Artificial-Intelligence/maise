@@ -106,4 +106,7 @@ dependencies {
     implementation 'com.microsoft.onnxruntime:onnxruntime-android:latest.release'
     implementation 'androidx.viewpager2:viewpager2:1.0.0'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
+
+    // WebRTC Voice Activity Detection — same library as WhisperIMEplus
+    implementation 'com.github.gkonovalov.android-vad:webrtc:2.0.9'
 }

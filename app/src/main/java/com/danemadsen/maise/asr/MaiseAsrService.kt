@@ -3,8 +3,10 @@ package com.danemadsen.maise.asr
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
+import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
@@ -15,6 +17,10 @@ import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.danemadsen.maise.R
+import com.konovalov.vad.webrtc.Vad
+import com.konovalov.vad.webrtc.config.FrameSize
+import com.konovalov.vad.webrtc.config.Mode
+import com.konovalov.vad.webrtc.config.SampleRate
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -22,49 +28,43 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 private const val TAG = "MaiseAsrService"
 private const val NOTIF_CHANNEL = "maise_asr"
 private const val NOTIF_ID = 1001
 
-// Recording parameters — 16 kHz mono 16-bit matches Whisper directly (no resampling)
-private const val REC_SAMPLE_RATE = 16000
-private const val MAX_RECORD_SECONDS = 30
+// Matches WhisperIMEplus — 30ms frame at 16 kHz, same as WebRTC VAD frame size
+private const val VAD_FRAME_SAMPLES = 480
+private const val VAD_FRAME_BYTES   = VAD_FRAME_SAMPLES * 2  // 960 bytes, 16-bit PCM
+
+private const val SAMPLE_RATE       = 16000
+private const val MAX_BYTES         = SAMPLE_RATE * 2 * 30  // 30 seconds
 
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
  *
- * How RECORD_AUDIO access works (Android 14+, targetSDK ≥ 34):
+ * Ported from WhisperIMEplus (WhisperRecognitionService + Recorder) with our asset-based
+ * WhisperASR substituted for their external-storage model loader.
  *
- * The RecognitionService base class calls checkPermissionAndStartDataDelivery() with the
- * CALLER's AttributionSource after onStartListening() returns. Because the check is on the
- * calling app's attribution chain, the check passes when the calling app is in the foreground
- * (visible activity) — exactly like WhisperIMEplus's WhisperRecognitionService, which also
- * performs no startForeground(MICROPHONE) calls.
+ * The [android.permission.QUERY_ALL_PACKAGES] permission in the manifest is critical:
+ * without it the RecognitionService base class cannot resolve the caller's attribution
+ * chain in checkPermissionAndStartDataDelivery(), producing
+ * "caller doesn't have permission: android.permission.RECORD_AUDIO" and firing onCancel.
  *
- * Additionally, MaiseInputMethodService runs in the same process. When the Maise IME is
- * active and visible (keyboard showing), the system binds it with BIND_SHOWING_UI, which
- * elevates the UID to PROCESS_STATE_TOP. At TOP state the while-in-use RECORD_AUDIO AppOps
- * check passes unconditionally regardless of caller state.
- *
- * Prerequisites:
- *  1. User has granted RECORD_AUDIO to Maise (prompted by MainActivity on first launch).
- *  2. Maise is selected as the Speech Recognition Service in system settings.
- *  3. For best reliability: user has also enabled Maise as an Input Method (Settings →
- *     Language & Input → On-screen keyboard) and the Maise keyboard is shown when
- *     triggering voice recognition.
+ * Recording uses WebRTC VAD for automatic end-of-speech detection (same as WhisperIMEplus).
+ * onStopListening() provides a manual fallback stop.
  */
 class MaiseAsrService : RecognitionService() {
 
     private val exceptionHandler = CoroutineExceptionHandler { _, t ->
         Log.e(TAG, "Uncaught coroutine exception", t)
     }
-
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
 
     @Volatile private var asr: WhisperASR? = null
-    @Volatile private var audioRecord: AudioRecord? = null
-    @Volatile private var recordedSamples: ShortArray? = null
     @Volatile private var isRecording = false
     @Volatile private var activeJob: Job? = null
 
@@ -82,13 +82,12 @@ class MaiseAsrService : RecognitionService() {
             NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
                 .apply { setSound(null, null) }
         )
+
+        // Pre-load the Whisper model so the first recognition session is fast
         scope.launch {
             try {
                 val engine = WhisperASR(applicationContext)
-                synchronized(initLock) {
-                    asr = engine
-                    initLock.notifyAll()
-                }
+                synchronized(initLock) { asr = engine; initLock.notifyAll() }
                 Log.i(TAG, "WhisperASR ready")
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to initialise WhisperASR", e)
@@ -98,66 +97,10 @@ class MaiseAsrService : RecognitionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        Log.d(TAG, "onStartCommand (intent=${if (intent == null) "null/restart" else "explicit"})")
-        // DATA_SYNC foreground keeps the process alive. It has no eligible-state restriction
-        // on API 29–34 so this always succeeds (including on START_STICKY restarts with no
-        // visible activity). RECORD_AUDIO access is handled separately via the calling app's
-        // attribution (caller foreground) or the IME's PROCESS_STATE_TOP (IME showing).
-        startDataSyncForeground()
-        return START_STICKY
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        scope.cancel()
-        stopListeningInternal()
-        asr?.close()
-        asr = null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(true)
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    // RecognitionService callbacks
-    // -------------------------------------------------------------------------
-
-    override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
-        Log.d(TAG, "onStartListening")
-
-        if (isRecording) {
-            listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
-            return
-        }
-
-        listener.safe { readyForSpeech(Bundle()) }
-        startRecording(listener)
-    }
-
-    override fun onStopListening(listener: Callback) {
-        Log.d(TAG, "onStopListening")
-        val samples = finishRecording()
-        if (samples == null || samples.isEmpty()) {
-            listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
-            return
-        }
-        transcribeAsync(samples, listener)
-    }
-
-    override fun onCancel(listener: Callback) {
-        Log.d(TAG, "onCancel")
-        activeJob?.cancel()
-        stopListeningInternal()
-    }
-
-    // -------------------------------------------------------------------------
-    // Foreground service helpers
-    // -------------------------------------------------------------------------
-
-    private fun startDataSyncForeground() {
+        Log.d(TAG, "onStartCommand")
+        // DATA_SYNC foreground keeps the process alive. Has no eligible-state restriction
+        // so it always succeeds, even on START_STICKY restarts with no visible activity.
+        // RECORD_AUDIO access is handled by QUERY_ALL_PACKAGES + the caller's attribution.
         try {
             val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
                 .setContentTitle(getString(R.string.app_name))
@@ -172,35 +115,98 @@ class MaiseAsrService : RecognitionService() {
             } else {
                 startForeground(NOTIF_ID, notification)
             }
-            Log.d(TAG, "DATA_SYNC foreground established")
         } catch (e: Exception) {
-            Log.w(TAG, "startDataSyncForeground failed: ${e.message}")
+            Log.w(TAG, "startForeground failed: ${e.message}")
+        }
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        scope.cancel()
+        isRecording = false
+        asr?.close()
+        asr = null
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
         }
     }
 
     // -------------------------------------------------------------------------
-    // Audio recording
+    // RecognitionService callbacks — matching WhisperIMEplus's pattern exactly
     // -------------------------------------------------------------------------
 
-    private fun startRecording(listener: Callback) {
-        val minBuf = AudioRecord.getMinBufferSize(
-            REC_SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT
-        )
-        if (minBuf == AudioRecord.ERROR_BAD_VALUE || minBuf == AudioRecord.ERROR) {
-            listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
+    override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
+        Log.d(TAG, "onStartListening")
+
+        // Mirror WhisperIMEplus: check permission ourselves before touching AudioRecord
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "RECORD_AUDIO not granted")
+            listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
             return
         }
 
-        val bufSize = maxOf(minBuf, REC_SAMPLE_RATE * 2)
-        val rec = AudioRecord(
-            MediaRecorder.AudioSource.VOICE_RECOGNITION,
-            REC_SAMPLE_RATE,
-            AudioFormat.CHANNEL_IN_MONO,
-            AudioFormat.ENCODING_PCM_16BIT,
-            bufSize
+        if (isRecording) {
+            listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
+            return
+        }
+
+        startRecordingWithVad(listener)
+    }
+
+    override fun onStopListening(listener: Callback) {
+        Log.d(TAG, "onStopListening — manual stop")
+        // Setting isRecording = false exits the VAD loop; the recording coroutine then
+        // transcribes whatever was collected and calls results() via listener.
+        isRecording = false
+    }
+
+    override fun onCancel(listener: Callback) {
+        Log.d(TAG, "onCancel")
+        activeJob?.cancel()
+        isRecording = false
+    }
+
+    // -------------------------------------------------------------------------
+    // VAD-based recording (ported from WhisperIMEplus Recorder.java)
+    // -------------------------------------------------------------------------
+
+    private fun startRecordingWithVad(listener: Callback) {
+        val bufSize = maxOf(
+            AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),
+            VAD_FRAME_BYTES
         )
+
+        val rec = try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                AudioRecord.Builder()
+                    .setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
+                    .setAudioFormat(
+                        AudioFormat.Builder()
+                            .setSampleRate(SAMPLE_RATE)
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                            .build()
+                    )
+                    .setBufferSizeInBytes(bufSize)
+                    .build()
+            } else {
+                @Suppress("DEPRECATION")
+                AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT, bufSize
+                )
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "AudioRecord creation failed", e)
+            listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
+            return
+        }
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
@@ -208,61 +214,73 @@ class MaiseAsrService : RecognitionService() {
             return
         }
 
-        audioRecord = rec
         isRecording = true
 
         activeJob = scope.launch {
-            val maxSamples = REC_SAMPLE_RATE * MAX_RECORD_SECONDS
-            val buffer = ShortArray(maxSamples)
-            val chunk  = ShortArray(1024)
-            var total  = 0
+            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+            audioManager.startBluetoothSco()
+            audioManager.isBluetoothScoOn = true
+
+            val vad = Vad.builder()
+                .setSampleRate(SampleRate.SAMPLE_RATE_16K)
+                .setFrameSize(FrameSize.FRAME_SIZE_480)
+                .setMode(Mode.VERY_AGGRESSIVE)
+                .setSilenceDurationMs(800)
+                .setSpeechDurationMs(200)
+                .build()
+
+            val output = ByteArrayOutputStream()
+            val chunk  = ByteArray(VAD_FRAME_BYTES)
+            var speechStarted = false
 
             rec.startRecording()
+            // Mirror WhisperIMEplus: readyForSpeech then beginningOfSpeech right at start
+            listener.safe { readyForSpeech(Bundle()) }
             listener.safe { beginningOfSpeech() }
-            Log.d(TAG, "Recording started")
+            Log.d(TAG, "Recording started (VAD)")
 
-            while (isRecording && total < maxSamples) {
-                val read = rec.read(chunk, 0, chunk.size.coerceAtMost(maxSamples - total))
-                if (read < 0) break
-                chunk.copyInto(buffer, total, 0, read)
-                total += read
+            while (isRecording && output.size() < MAX_BYTES) {
+                val read = rec.read(chunk, 0, chunk.size)
+                if (read < 0) {
+                    Log.w(TAG, "AudioRecord read error: $read")
+                    break
+                }
+                output.write(chunk, 0, read)
 
-                val rms = computeRms(chunk, read)
-                try {
-                    listener.rmsChanged(rms)
-                } catch (e: RemoteException) {
-                    Log.w(TAG, "Client disconnected during recording")
-                    isRecording = false
+                if (vad.isSpeech(chunk)) {
+                    if (!speechStarted) {
+                        speechStarted = true
+                        try { listener.rmsChanged(10f) } catch (_: RemoteException) {}
+                    }
+                } else if (speechStarted) {
+                    // VAD detected silence after speech — auto-stop (same as WhisperIMEplus)
+                    Log.d(TAG, "VAD: silence after speech, stopping")
                     break
                 }
             }
 
             runCatching { rec.stop() }
             runCatching { rec.release() }
-            audioRecord = null
-            recordedSamples = if (total > 0) buffer.copyOf(total) else null
+            runCatching { vad.close() }
+            audioManager.stopBluetoothSco()
+            audioManager.isBluetoothScoOn = false
             isRecording = false
-            Log.d(TAG, "Recording stopped, $total samples")
-        }
-    }
 
-    private fun finishRecording(): ShortArray? {
-        isRecording = false
-        var waited = 0
-        while (audioRecord != null && waited < 500) {
-            Thread.sleep(10); waited += 10
-        }
-        return recordedSamples.also { recordedSamples = null }
-    }
+            Log.d(TAG, "Recording done, ${output.size()} bytes")
 
-    private fun stopListeningInternal() {
-        isRecording = false
-        audioRecord?.let { rec ->
-            runCatching { rec.stop() }
-            runCatching { rec.release() }
+            // Mirror WhisperIMEplus threshold: > 6400 bytes (~0.2 s at 16 kHz 16-bit)
+            if (output.size() <= 6400) {
+                listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
+                return@launch
+            }
+
+            // Convert bytes → ShortArray for WhisperASR
+            val bytes = output.toByteArray()
+            val samples = ShortArray(bytes.size / 2)
+            ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(samples)
+
+            transcribeAsync(samples, listener)
         }
-        audioRecord = null
-        recordedSamples = null
     }
 
     // -------------------------------------------------------------------------
@@ -270,40 +288,37 @@ class MaiseAsrService : RecognitionService() {
     // -------------------------------------------------------------------------
 
     private fun transcribeAsync(samples: ShortArray, listener: Callback) {
-        activeJob = scope.launch {
-            listener.safe { endOfSpeech() }
+        // transcribeAsync is called from within activeJob's coroutine, so no new launch needed
+        listener.safe { endOfSpeech() }
 
-            synchronized(initLock) {
-                if (asr == null) initLock.wait(5000L)
+        // Wait for model if it hasn't finished loading yet
+        synchronized(initLock) {
+            if (asr == null) initLock.wait(10_000L)
+        }
+
+        val engine = asr
+        if (engine == null) {
+            listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
+            return
+        }
+
+        try {
+            val text = engine.transcribe(samples, SAMPLE_RATE)
+            Log.d(TAG, "Transcribed: \"$text\"")
+
+            if (text.isBlank()) {
+                listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
+                return
             }
 
-            val engine = asr
-            if (engine == null) {
-                listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
-                return@launch
+            val bundle = Bundle().apply {
+                putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
+                putFloatArray(SpeechRecognizer.CONFIDENCE_SCORES, floatArrayOf(1.0f))
             }
-
-            try {
-                val text = engine.transcribe(samples, REC_SAMPLE_RATE)
-                if (text.isBlank()) {
-                    listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
-                    return@launch
-                }
-
-                val bundle = Bundle()
-                bundle.putStringArrayList(
-                    SpeechRecognizer.RESULTS_RECOGNITION,
-                    arrayListOf(text)
-                )
-                bundle.putFloatArray(
-                    SpeechRecognizer.CONFIDENCE_SCORES,
-                    floatArrayOf(1.0f)
-                )
-                listener.safe { results(bundle) }
-            } catch (e: Exception) {
-                Log.e(TAG, "Transcription failed", e)
-                listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
-            }
+            listener.safe { results(bundle) }
+        } catch (e: Exception) {
+            Log.e(TAG, "Transcription failed", e)
+            listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
         }
     }
 
@@ -312,21 +327,8 @@ class MaiseAsrService : RecognitionService() {
     // -------------------------------------------------------------------------
 
     private inline fun Callback.safe(block: Callback.() -> Unit) {
-        try {
-            block()
-        } catch (e: Exception) {
+        try { block() } catch (e: Exception) {
             Log.w(TAG, "Callback IPC failed: ${e.message}")
         }
-    }
-
-    private fun computeRms(buf: ShortArray, len: Int): Float {
-        var sum = 0.0
-        for (i in 0 until len) {
-            val s = buf[i] / 32768.0
-            sum += s * s
-        }
-        val rms = Math.sqrt(sum / len.coerceAtLeast(1))
-        val db = 20.0 * Math.log10(rms.coerceAtLeast(1e-8))
-        return db.toFloat().coerceIn(-160f, 0f)
     }
 }
