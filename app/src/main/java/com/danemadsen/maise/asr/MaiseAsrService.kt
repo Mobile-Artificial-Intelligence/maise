@@ -1,17 +1,23 @@
 package com.danemadsen.maise.asr
 
 import android.Manifest
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Build
 import android.os.Bundle
 import android.os.RemoteException
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
+import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import com.danemadsen.maise.R
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +27,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 private const val TAG = "MaiseAsrService"
+private const val NOTIF_CHANNEL = "maise_asr"
+private const val NOTIF_ID = 1001
 
 // Recording parameters — 16 kHz mono 16-bit matches Whisper directly (no resampling)
 private const val REC_SAMPLE_RATE = 16000
@@ -29,10 +37,17 @@ private const val MAX_RECORD_SECONDS = 30
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
  *
- * Apps extending RecognitionService do NOT need to call startForeground(). The Android
- * framework automatically grants temporary microphone access when the service is bound
- * (Android 12+). Calling startForeground() from here interferes with the base class's
- * internal state machine and causes spurious onCancel() calls.
+ * Why startForeground() is required:
+ * After onStartListening() returns, the RecognitionService base class runs a strict
+ * AppOps data-delivery permission check. Our service process is background-bound,
+ * which fails the AppOps check → base class calls onCancel(). Calling startForeground()
+ * inside onStartListening() elevates the process state BEFORE the check runs.
+ *
+ * Why SHORT_SERVICE on Android 14+ (API 34+):
+ * MICROPHONE type requires "eligible state" (visible activity, etc.) on API 34+.
+ * SHORT_SERVICE has no such restriction — it only requires the service to be in
+ * "started" state (via startService from MainActivity). We pre-start the service
+ * from MainActivity.onCreate() with START_STICKY to guarantee this.
  */
 class MaiseAsrService : RecognitionService() {
 
@@ -56,6 +71,10 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onCreate() {
         super.onCreate()
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(NOTIF_CHANNEL, "Speech Recognition", NotificationManager.IMPORTANCE_LOW)
+                .apply { setSound(null, null) }
+        )
         scope.launch {
             try {
                 val engine = WhisperASR(applicationContext)
@@ -69,6 +88,13 @@ class MaiseAsrService : RecognitionService() {
                 synchronized(initLock) { initLock.notifyAll() }
             }
         }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Called when MainActivity pre-starts us. Returning START_STICKY ensures the
+        // system restarts us if killed, keeping us in "started" state for future
+        // startForeground(SHORT_SERVICE) calls in onStartListening().
+        return START_STICKY
     }
 
     override fun onDestroy() {
@@ -86,15 +112,23 @@ class MaiseAsrService : RecognitionService() {
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
         Log.d(TAG, "onStartListening")
 
+        // Must call startForeground() here, BEFORE returning, so our process state
+        // is elevated before the base class runs checkPermissionAndStartDataDelivery()
+        // (which happens after this method returns). Without foreground status that
+        // AppOps check fails → base class calls onCancel().
+        startListeningForeground()
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
             Log.e(TAG, "RECORD_AUDIO permission not granted")
+            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
             return
         }
 
         if (isRecording) {
+            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
             return
         }
@@ -107,6 +141,7 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onStopListening")
         val samples = finishRecording()
         if (samples == null || samples.isEmpty()) {
+            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
             return
         }
@@ -117,6 +152,45 @@ class MaiseAsrService : RecognitionService() {
         Log.d(TAG, "onCancel")
         activeJob?.cancel()
         stopListeningInternal()
+        stopListeningForeground()
+    }
+
+    // -------------------------------------------------------------------------
+    // Foreground service
+    // -------------------------------------------------------------------------
+
+    private fun startListeningForeground() {
+        val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
+            .setContentTitle(getString(R.string.app_name))
+            .setContentText("Listening…")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                // API 34+: SHORT_SERVICE has no "eligible state" restriction.
+                // Service must be in "started" state (guaranteed by MainActivity.startService).
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30–33: MICROPHONE type, no eligible state restriction on these versions.
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            } else {
+                startForeground(NOTIF_ID, notification)
+            }
+            Log.d(TAG, "startForeground succeeded")
+        } catch (e: Exception) {
+            Log.w(TAG, "startForeground failed: ${e.message}")
+        }
+    }
+
+    private fun stopListeningForeground() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -130,6 +204,7 @@ class MaiseAsrService : RecognitionService() {
             AudioFormat.ENCODING_PCM_16BIT
         )
         if (minBuf == AudioRecord.ERROR_BAD_VALUE || minBuf == AudioRecord.ERROR) {
+            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -145,6 +220,7 @@ class MaiseAsrService : RecognitionService() {
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
+            stopListeningForeground()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -222,6 +298,7 @@ class MaiseAsrService : RecognitionService() {
 
             val engine = asr
             if (engine == null) {
+                stopListeningForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
                 return@launch
             }
@@ -229,6 +306,7 @@ class MaiseAsrService : RecognitionService() {
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 if (text.isBlank()) {
+                    stopListeningForeground()
                     listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
                     return@launch
                 }
@@ -242,9 +320,11 @@ class MaiseAsrService : RecognitionService() {
                     SpeechRecognizer.CONFIDENCE_SCORES,
                     floatArrayOf(1.0f)
                 )
+                stopListeningForeground()
                 listener.safe { results(bundle) }
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription failed", e)
+                stopListeningForeground()
                 listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
             }
         }

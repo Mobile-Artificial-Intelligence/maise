@@ -1,6 +1,7 @@
 package com.danemadsen.maise
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
@@ -8,6 +9,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.danemadsen.maise.asr.MaiseAsrService
 import com.danemadsen.maise.databinding.ActivityMainBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
@@ -45,5 +47,11 @@ class MainActivity : AppCompatActivity() {
             != PackageManager.PERMISSION_GRANTED) {
             requestRecordAudio.launch(Manifest.permission.RECORD_AUDIO)
         }
+
+        // Pre-start the ASR service so it is in "started" state before any speech
+        // client binds to it. startForeground(SHORT_SERVICE) requires the service to
+        // be "started" (via startService/startForegroundService), not just bound.
+        // START_STICKY ensures the service restarts if killed, maintaining started state.
+        startService(Intent(this, MaiseAsrService::class.java))
     }
 }
