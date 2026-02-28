@@ -1,10 +1,8 @@
 package com.danemadsen.maise.asr
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -16,7 +14,6 @@ import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.danemadsen.maise.R
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -37,17 +34,23 @@ private const val MAX_RECORD_SECONDS = 30
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
  *
- * Why startForeground() is required:
+ * Why startForeground(MICROPHONE) is required:
  * After onStartListening() returns, the RecognitionService base class runs a strict
- * AppOps data-delivery permission check. Our service process is background-bound,
- * which fails the AppOps check → base class calls onCancel(). Calling startForeground()
- * inside onStartListening() elevates the process state BEFORE the check runs.
+ * AppOps data-delivery check for RECORD_AUDIO. Only FOREGROUND_SERVICE_TYPE_MICROPHONE
+ * grants RECORD_AUDIO AppOps access from background; other types (including SHORT_SERVICE)
+ * do not satisfy this check → base class calls onCancel().
  *
- * Why SHORT_SERVICE on Android 14+ (API 34+):
- * MICROPHONE type requires "eligible state" (visible activity, etc.) on API 34+.
- * SHORT_SERVICE has no such restriction — it only requires the service to be in
- * "started" state (via startService from MainActivity). We pre-start the service
- * from MainActivity.onCreate() with START_STICKY to guarantee this.
+ * Why MICROPHONE type works on Android 14+ (API 34+) without a visible activity:
+ * The system's SpeechRecognitionManagerService binds to this service with
+ * BIND_INCLUDE_CAPABILITIES | BIND_FOREGROUND_SERVICE when this service is the
+ * configured default recognizer (Settings.Secure.VOICE_RECOGNITION_SERVICE). This
+ * propagates the calling app's foreground state to our process, satisfying the
+ * "eligible state" check for FOREGROUND_SERVICE_TYPE_MICROPHONE.
+ *
+ * Why the service must be pre-started from MainActivity:
+ * startForeground() inside a bound-only service still requires the service to have
+ * been started (via startService/startForegroundService) on some API levels.
+ * We call startService from MainActivity.onCreate() with START_STICKY.
  */
 class MaiseAsrService : RecognitionService() {
 
@@ -117,7 +120,10 @@ class MaiseAsrService : RecognitionService() {
     // -------------------------------------------------------------------------
 
     override fun onStartListening(recognizerIntent: Intent, listener: Callback) {
-        Log.d(TAG, "onStartListening")
+        val defaultRecognizer = android.provider.Settings.Secure.getString(
+            contentResolver, "voice_recognition_service"
+        )
+        Log.d(TAG, "onStartListening — default recognizer: $defaultRecognizer")
 
         // Must call startForeground() here, BEFORE returning, so our process state
         // is elevated before the base class runs checkPermissionAndStartDataDelivery()
@@ -166,12 +172,11 @@ class MaiseAsrService : RecognitionService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // API 34+: SHORT_SERVICE has no "eligible state" restriction.
-                // Service must be in "started" state (guaranteed by MainActivity.startService).
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SHORT_SERVICE)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                // API 30–33: MICROPHONE type, no eligible state restriction on these versions.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // API 30+: MICROPHONE type grants RECORD_AUDIO AppOps access for background
+                // recording. On API 34+, eligible state is required; it is satisfied when the
+                // system binds us with BIND_INCLUDE_CAPABILITIES (which happens when we are the
+                // device's configured default recognizer) and the calling app is in the foreground.
                 startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             } else {
                 startForeground(NOTIF_ID, notification)
