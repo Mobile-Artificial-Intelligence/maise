@@ -68,15 +68,26 @@ class WhisperASR(context: Context) {
     private val melFilterbank: Array<FloatArray> = buildMelFilterbank()
 
     init {
-        val opts = OrtSession.SessionOptions().apply {
+        val cores = Runtime.getRuntime().availableProcessors()
+
+        // Encoder: fixed [1, 80, 3000] input — good candidate for NNAPI hardware offload.
+        val encoderOpts = OrtSession.SessionOptions().apply {
             setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            setIntraOpNumThreads(cores)
+            try { addNnapi() } catch (_: Exception) { /* NNAPI unavailable, use CPU */ }
         }
+        // Decoder: dynamic sequence length — keep on CPU to avoid NNAPI recompilation overhead.
+        val decoderOpts = OrtSession.SessionOptions().apply {
+            setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
+            setIntraOpNumThreads(cores)
+        }
+
         val encoderFile = copyAssetToFile(context, "encoder_model_quantized.onnx")
         val decoderFile = copyAssetToFile(context, "decoder_model_quantized.onnx")
-        encoderSession = env.createSession(encoderFile.absolutePath, opts)
-        decoderSession = env.createSession(decoderFile.absolutePath, opts)
+        encoderSession = env.createSession(encoderFile.absolutePath, encoderOpts)
+        decoderSession = env.createSession(decoderFile.absolutePath, decoderOpts)
         tokenizer      = WhisperTokenizer(context)
-        Log.i(TAG, "WhisperASR initialized")
+        Log.i(TAG, "WhisperASR initialized (cores=$cores)")
     }
 
     /**
@@ -123,10 +134,24 @@ class WhisperASR(context: Context) {
         // Mel accumulator [n_mels][n_frames]
         val mel = Array(N_MELS) { FloatArray(N_FRAMES) }
 
+        // Only run the FFT for frames that overlap actual audio; silence frames are
+        // guaranteed to produce zero power → log10(1e-10) after the clamp below.
+        val silenceLog = log10(1e-10f)
+        val audioFrames = minOf(
+            (audio.size + HOP_LENGTH - 1) / HOP_LENGTH + 1,
+            N_FRAMES
+        )
+
         val re = FloatArray(FFT_SIZE)
         val im = FloatArray(FFT_SIZE)
 
         for (frame in 0 until N_FRAMES) {
+            if (frame >= audioFrames) {
+                // Pure silence — skip FFT and fill with the log floor directly.
+                for (m in 0 until N_MELS) mel[m][frame] = silenceLog
+                continue
+            }
+
             val start = frame * HOP_LENGTH
 
             // Fill FFT input: Hann-windowed audio, zero-pad to FFT_SIZE
@@ -149,11 +174,12 @@ class WhisperASR(context: Context) {
             }
         }
 
-        // Log-compress: log10(max(x, 1e-10))
+        // Log-compress: log10(max(x, 1e-10)).
+        // Silence frames (f >= audioFrames) are already set to silenceLog — skip log10 on them.
         var maxLog = Float.NEGATIVE_INFINITY
         for (m in 0 until N_MELS) {
             for (f in 0 until N_FRAMES) {
-                val v = log10(mel[m][f].coerceAtLeast(1e-10f))
+                val v = if (f < audioFrames) log10(mel[m][f].coerceAtLeast(1e-10f)) else silenceLog
                 mel[m][f] = v
                 if (v > maxLog) maxLog = v
             }
