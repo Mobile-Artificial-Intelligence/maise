@@ -77,17 +77,11 @@ class AsrFragment : Fragment() {
         }
 
         binding.openAsrSettingsButton.setOnClickListener {
-            // Try the most direct path to the speech recognition service selector first,
-            // then fall back to broader Language & Input settings.
-            val actions = listOf(
-                "android.settings.VOICE_INPUT_SETTINGS",
-                "android.settings.LANGUAGE_INPUT_SETTINGS"
-            )
-            for (action in actions) {
-                try { startActivity(Intent(action)); return@setOnClickListener }
-                catch (_: ActivityNotFoundException) {}
+            try {
+                startActivity(Intent(Settings.ACTION_LOCALE_SETTINGS))
+            } catch (_: ActivityNotFoundException) {
+                startActivity(Intent(Settings.ACTION_SETTINGS))
             }
-            startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
 
