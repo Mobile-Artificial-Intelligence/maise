@@ -319,7 +319,7 @@ class WhisperASR(context: Context) {
 
         try {
             for (i in 0 until MAX_NEW_TOKENS) {
-                val inputIdsBuf = LongBuffer.wrap(LongArray(allTokens.size) { i -> allTokens[i].toLong() })
+                val inputIdsBuf = LongBuffer.wrap(LongArray(allTokens.size) { index -> allTokens[index].toLong() })
                 val inputIdsTensor = OnnxTensor.createTensor(
                     env, inputIdsBuf, longArrayOf(1, allTokens.size.toLong())
                 )

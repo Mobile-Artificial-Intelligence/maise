@@ -14,7 +14,6 @@ val ALL_VOICES: List<VoiceInfo> = listOf(
     VoiceInfo("en-US-alloy-kokoro",       Locale.US),
     VoiceInfo("en-US-aoede-kokoro",       Locale.US),
     VoiceInfo("en-US-bella-kokoro",       Locale.US),
-    VoiceInfo("en-US-curie-kokoro",       Locale.US),
     VoiceInfo("en-US-heart-kokoro",       Locale.US),
     VoiceInfo("en-US-jessica-kokoro",     Locale.US),
     VoiceInfo("en-US-kore-kokoro",        Locale.US),

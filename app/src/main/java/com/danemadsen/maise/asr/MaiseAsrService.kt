@@ -6,7 +6,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
@@ -217,10 +216,6 @@ class MaiseAsrService : RecognitionService() {
         isRecording = true
 
         activeJob = scope.launch {
-            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-            audioManager.startBluetoothSco()
-            audioManager.isBluetoothScoOn = true
-
             val vad = Vad.builder()
                 .setSampleRate(SampleRate.SAMPLE_RATE_16K)
                 .setFrameSize(FrameSize.FRAME_SIZE_480)
@@ -262,8 +257,6 @@ class MaiseAsrService : RecognitionService() {
             runCatching { rec.stop() }
             runCatching { rec.release() }
             runCatching { vad.close() }
-            audioManager.stopBluetoothSco()
-            audioManager.isBluetoothScoOn = false
             isRecording = false
 
             Log.d(TAG, "Recording done, ${output.size()} bytes")
