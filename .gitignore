@@ -90,3 +90,11 @@ lint/tmp/
 *.jks
 *.keystore
 key.properties
+*.pdf
+*.synctex.gz
+*.log
+*.out
+*.aux
+*.fls
+*.fdb_latexmk
+*.toc

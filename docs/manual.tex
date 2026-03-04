@@ -1,0 +1,254 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[colorlinks=true, allcolors=black]{hyperref}
+\usepackage[margin=2cm]{geometry}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{enumitem}
+
+\definecolor{codebg}{rgb}{0.95,0.95,0.95}
+\definecolor{keywordcolor}{rgb}{0.0,0.4,0.8}
+
+\lstset{
+    backgroundcolor=\color{codebg},
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    rulecolor=\color{gray},
+    keywordstyle=\color{keywordcolor}\bfseries,
+}
+
+\setlength{\fboxsep}{0pt}
+
+\begin{document}
+\begin{titlepage}
+    \centering
+    \rule{\textwidth}{1pt}\par
+    \vspace*{1.2cm}
+    {\Huge\textbf{Mobile Artificial Intelligence Speech Engine Manual}}\\
+    \vspace*{1cm}
+    \rule{\textwidth}{1pt}\par
+    \vspace*{\fill}
+    \includegraphics[width=0.4\textwidth]{./logo.png}\\
+    \vspace*{\fill}
+    \rule{\textwidth}{1pt}\par
+    \vspace*{1cm}
+    \makebox[\textwidth]{
+        \large v3.0.0\hfill \today
+    }
+\end{titlepage}
+
+% Table of contents
+\tableofcontents
+
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+
+Maise (Mobile Artificial Intelligence Speech Engine) is a free and open-source Android application that provides high-quality, fully on-device text-to-speech synthesis (TTS) and automatic speech recognition (ASR). All processing runs locally using \href{https://github.com/microsoft/onnxruntime}{ONNX Runtime} — no internet connection is required and no audio or text data ever leaves your device.
+
+Maise integrates with Android at the system level:
+
+\begin{itemize}[noitemsep]
+    \item The \textbf{TTS component} is registered as an Android \texttt{TextToSpeechService}, meaning any app that uses the standard \texttt{TextToSpeech} API will automatically use Maise once it is set as the system default — no per-app integration is needed.
+    \item The \textbf{ASR component} is registered as an Android \texttt{RecognitionService}, making it compatible with any app that uses the standard \texttt{SpeechRecognizer} API.
+\end{itemize}
+
+\subsection{Companion App}
+
+Maise is the voice companion to \textbf{Maid} (Mobile Artificial Intelligence Distribution), a free and open-source AI chat application for Android. Maid can be found at\\
+\url{https://github.com/Mobile-Artificial-Intelligence/maid}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{How It Works}
+
+\subsection{Text-to-Speech}
+
+The TTS pipeline converts raw text into spoken audio entirely on-device through four stages:
+
+\begin{enumerate}
+    \item \textbf{Text normalisation} — Raw input text is cleaned and normalised. Numbers are expanded to words, abbreviations are resolved, and punctuation is handled so that the phonemizer receives well-formed prose.
+    \item \textbf{Phonemization} — \href{https://github.com/NeuralVox/OpenPhonemizer}{Open Phonemizer} converts the normalised text into a sequence of IPA phonemes.
+    \item \textbf{Neural synthesis} — The phoneme sequence and a per-voice style embedding are fed into \href{https://github.com/hexgrad/kokoro}{Kokoro}, a high-quality multi-lingual neural TTS model running under ONNX Runtime, which produces a raw PCM audio waveform.
+    \item \textbf{Streaming playback} — Synthesis and playback run concurrently in a producer-consumer pipeline so that audio begins playing before the entire input has been processed.
+\end{enumerate}
+
+Audio output is 24\,kHz mono 16-bit PCM, played directly through the device speaker or any connected audio output.
+
+\subsection{Automatic Speech Recognition}
+
+The ASR pipeline transcribes spoken audio to text through three stages:
+
+\begin{enumerate}
+    \item \textbf{Recording} — Audio is captured from the microphone at 16\,kHz mono 16-bit PCM. Voice Activity Detection (VAD) using the WebRTC VAD algorithm automatically determines when speech ends, so you do not need to manually stop recording. The maximum recording duration is 30 seconds.
+    \item \textbf{Log-mel spectrogram} — A Whisper-compatible 80-band log-mel spectrogram is computed on-device from the captured audio.
+    \item \textbf{Transcription} — The spectrogram is processed by \href{https://github.com/huggingface/distil-whisper}{distil-whisper/distil-small.en}, an encoder-decoder Transformer model, using greedy decoding to produce the transcribed text.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{The App}
+
+The Maise app has a two-tab interface: \textbf{TTS} for text-to-speech and \textbf{ASR} for automatic speech recognition. Tap the tab labels at the top of the screen to switch between them.
+
+\subsection{TTS Tab}
+
+The TTS tab lets you select a voice and preview speech synthesis directly in the app.
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Voice} — A dropdown listing all available voices. Select a voice to use it for both in-app preview and the system-wide TTS service. Your selection is saved automatically and persists across restarts.
+    \item \textbf{Text field} — Enter any text you want to hear spoken. The field supports multiple lines.
+    \item \textbf{Speak} — Tap to synthesise and play the entered text. The status line below the button shows the current state: \emph{Loading models\ldots}, \emph{Ready}, \emph{Synthesizing\ldots}, \emph{Playing\ldots}, or \emph{Done}.
+    \item \textbf{Open TTS Settings} — Opens the Android system TTS settings page directly, where you can set Maise as the preferred engine (see Section~\ref{sec:setup-tts}).
+    \item \textbf{Report mispronunciation} — Opens the Maise GitHub issues page so you can report words that are synthesised incorrectly.
+\end{itemize}
+
+\subsection{ASR Tab}
+
+The ASR tab lets you test on-device speech recognition.
+
+\begin{itemize}[noitemsep]
+    \item \textbf{Start / Stop Recording} — Tap once to begin recording; tap again to stop early. Recording also stops automatically when silence is detected after speech. The status line shows the current state: \emph{Loading model\ldots}, \emph{Ready --- tap to record}, \emph{Recording\ldots}, \emph{Transcribing\ldots}, or \emph{Done}.
+    \item \textbf{Transcription output} — The read-only text field displays the recognised text after each recording. If no speech is detected it shows \emph{(no speech detected)}.
+    \item \textbf{Open Keyboard Settings} — Opens the input method settings where you can enable the Maise keyboard (see Section~\ref{sec:setup-ime}).
+    \item \textbf{Open Speech Settings} — Opens the language and input settings where you can set Maise as the preferred speech recognition service (see Section~\ref{sec:setup-asr}).
+\end{itemize}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Voices}
+
+Maise ships with 68 Kokoro voices across multiple languages. All voices are bundled with the app — no downloads are required after installation.
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Language} & \textbf{Voices} \\
+\midrule
+English (US) & alloy, aoede, bella, heart, jessica, kore, nicole, nova, \\
+             & river, sarah, sky, adam, echo, eric, fenrir, liam, michael, \\
+             & onyx, puck, santa \\
+\addlinespace
+English (GB) & alice, emma, isabella, lily, daniel, fable, george, lewis \\
+\addlinespace
+German       & dora, alex, santa \\
+\addlinespace
+French       & siwis \\
+\addlinespace
+Greek        & alpha-f, beta-f, omega-m, psi-m \\
+\addlinespace
+Italian      & sara, nicola \\
+\addlinespace
+Japanese     & alpha-f, gongitsune, nezumi, tebukuro, kumo \\
+\addlinespace
+Portuguese (BR) & dora, alex, santa \\
+\addlinespace
+Chinese (Simplified) & xiaobei, xiaoni, xiaoxiao, xiaoyi, yunjian, yunxi, \\
+                     & yunxia, yunyang \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The default voice is \texttt{en-US-heart-kokoro}. To change it, use the Voice dropdown on the TTS tab.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Setup}
+\label{sec:setup}
+
+\subsection{Text-to-Speech}
+\label{sec:setup-tts}
+
+To use Maise as the system TTS engine for all apps on your device:
+
+\begin{enumerate}
+    \item Open the Android \textbf{Settings} app.
+    \item Navigate to \textbf{Accessibility} $\rightarrow$ \textbf{Text-to-Speech Output}.
+    \item Under \emph{Preferred engine}, select \textbf{Maise}.
+\end{enumerate}
+
+Alternatively, tap \textbf{Open TTS Settings} on the TTS tab to jump directly to this screen.
+
+Once Maise is set as the preferred engine, any app that calls the Android \texttt{TextToSpeech} API — including Maid — will use Maise automatically without any further configuration.
+
+\subsection{Automatic Speech Recognition}
+\label{sec:setup-asr}
+
+To use Maise as the system speech recognition service:
+
+\begin{enumerate}
+    \item Open the Android \textbf{Settings} app.
+    \item Navigate to \textbf{Apps} $\rightarrow$ \textbf{Default Apps} $\rightarrow$ \textbf{Assist \& voice input}.
+    \item Under \emph{Speech recognizer}, select \textbf{Maise}.
+\end{enumerate}
+
+Alternatively, tap \textbf{Open Speech Settings} on the ASR tab. You must also grant the \textbf{Microphone} permission to Maise the first time it is used for recognition.
+
+\subsection{Voice Input Method (Keyboard)}
+\label{sec:setup-ime}
+
+Maise also registers as an input method that provides a voice dictation button inside any text field. To enable it:
+
+\begin{enumerate}
+    \item Open the Android \textbf{Settings} app.
+    \item Navigate to \textbf{System} $\rightarrow$ \textbf{Language \& input} $\rightarrow$ \textbf{On-screen keyboard} (or \textbf{Virtual keyboard}).
+    \item Tap \textbf{Manage keyboards} and enable \textbf{Maise}.
+\end{enumerate}
+
+Alternatively, tap \textbf{Open Keyboard Settings} on the ASR tab. Once enabled, a globe or keyboard icon in any text field allows switching to Maise for voice input.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Building from Source}
+\label{sec:building}
+
+\subsection{Cloning the Repository}
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/Mobile-Artificial-Intelligence/maise.git
+\end{lstlisting}
+
+\subsection{Building}
+
+Build a release APK using the Gradle wrapper:
+
+\begin{lstlisting}[language=bash]
+./gradlew :app:assembleRelease
+\end{lstlisting}
+
+The output APK will be at:
+
+\begin{itemize}[noitemsep]
+    \item Release: \texttt{app/build/outputs/apk/release/app-release.apk}
+    \item Debug: \texttt{app/build/outputs/apk/debug/app-debug.apk}
+\end{itemize}
+
+The app targets \textbf{ARM64-v8a} devices running Android 8.0 (API 26) or later.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Signing Fingerprints}
+
+To verify that an APK was signed by the official Maise developer, check its certificate fingerprints against the values listed here. A mismatch indicates the APK may have been tampered with or repackaged.
+
+\subsection{Signing Key}
+
+The release signing key fingerprints can be obtained by running:
+
+\begin{lstlisting}[language=bash]
+keytool -list -v -keystore mobile-ai.jks
+\end{lstlisting}
+
+Compare the printed fingerprints against those published on the official GitHub releases page at\\
+\url{https://github.com/Mobile-Artificial-Intelligence/maise/releases}.
+
+\subsection{How to Verify}
+
+To inspect the certificate of a locally built or sideloaded APK, run the following command using the Android SDK build tools:
+
+\begin{lstlisting}[language=bash]
+apksigner verify --print-certs maise.apk
+\end{lstlisting}
+
+Compare the printed SHA-256 fingerprint against the signing key value above.
+
+\end{document}
