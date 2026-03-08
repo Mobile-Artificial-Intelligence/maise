@@ -64,7 +64,7 @@ jobs:
 
       - name: Decode Keystore File
         env:
-          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          KEYSTORE: ${{ secrets.ANDROID_UPLOAD_KEYSTORE }}
         run: echo "$KEYSTORE" | base64 --decode > app/key.jks
 
       - name: Create key.properties
