@@ -5,6 +5,7 @@ import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
 import android.content.Context
 import com.danemadsen.maise.copyAssetToFile
+import com.danemadsen.maise.g2p.EnglishG2p
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -30,11 +31,11 @@ fun splitSentences(text: String): List<String> {
 class KokoroTTS(private val context: Context) {
 
     private val env: OrtEnvironment = OrtEnvironment.getEnvironment()
-    private val phonemizer: OpenPhonemizer
+    private val phonemizer: EnglishG2p
     private val session: OrtSession
 
     init {
-        phonemizer = OpenPhonemizer(context, env)
+        phonemizer = EnglishG2p(context)
 
         val modelFile = copyAssetToFile(context, "kokoro-quantized.onnx")
         val opts = OrtSession.SessionOptions().apply {
@@ -47,12 +48,17 @@ class KokoroTTS(private val context: Context) {
      * Synthesize [text] using [voiceId] at [speed] (1.0 = normal).
      * Returns raw 16-bit PCM samples at [SAMPLE_RATE] Hz, mono.
      */
-    fun synthesize(text: String, voiceId: String, speed: Float = 1.0f): ShortArray {
+    fun synthesize(
+        text: String,
+        voiceId: String,
+        speed: Float = 1.0f,
+        cancellationCheck: () -> Unit = {},
+    ): ShortArray {
         // 1. Phonemize
-        val phonemes = phonemizer.phonemize(text)
+        val phonemes = phonemizer.phonemize(text, cancellationCheck)
 
         // 2. Tokenize phonemes (wraps with special token 0 on both ends)
-        val tokens = OpenPhonemizerOutputTokenizer.encode(phonemes)
+        val tokens = KokoroPhonemeTokenizer.encode(phonemes)
 
         // n_tokens is phoneme count without the two wrapping special tokens, capped at 509
         val nTokens = minOf(maxOf(tokens.size - 2, 0), MAX_PHONEME_LENGTH - 1)

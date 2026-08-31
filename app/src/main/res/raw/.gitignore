@@ -2,3 +2,5 @@
 *.onnx
 *.ort
 imagenet_classes.txt
+# g2p fallback network is tracked (needed by build)
+!en_us__g2p.onnx

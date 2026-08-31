@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'kotlin-android'
+    id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
 def keystoreProperties = new Properties()
@@ -91,7 +92,14 @@ android {
         noCompress 'onnx', 'bin'
     }
 
-    assetPacks = [':open-phonemizer', ':kokoro', ':whisper']
+    testOptions {
+        unitTests {
+            // KokoroPhonemeTokenizer logs via android.util.Log in JVM tests
+            returnDefaultValues = true
+        }
+    }
+
+    assetPacks = [':kokoro', ':whisper']
 }
 
 dependencies {
@@ -109,4 +117,15 @@ dependencies {
 
     // WebRTC Voice Activity Detection — vendored from GitHub releases (avoids JitPack)
     implementation files('libs/android-vad-webrtc-v2.0.9.aar')
+
+    // English G2P (vendored from GrapheneOS SpeechServices)
+    implementation 'org.apache.opennlp:opennlp-tools:2.5.10'
+    implementation 'com.ibm.icu:icu4j:78.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
+    implementation 'androidx.collection:collection-ktx:1.4.0'
+    implementation 'org.slf4j:slf4j-nop:2.0.18'
+
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test:runner:1.5.2'
 }

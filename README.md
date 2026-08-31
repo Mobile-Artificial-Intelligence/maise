@@ -12,10 +12,9 @@ All processing runs fully on-device using [ONNX Runtime](https://github.com/micr
 
 ### Text-to-Speech
 
-1. **Text normalization** — raw input text is cleaned and normalized (numbers, abbreviations, punctuation, etc.)
-2. **Phonemization** — [Open Phonemizer](https://github.com/NeuralVox/OpenPhonemizer) converts normalized text into phoneme sequences
-3. **Synthesis** — phonemes are fed into [**Kokoro**](https://github.com/hexgrad/kokoro), a high-quality multi-lingual neural TTS model, to produce a raw PCM audio waveform
-4. **Streaming playback** — sentences are synthesized and played concurrently using a producer-consumer pipeline so audio starts playing before the full text has been synthesized
+1. **Phonemization** — an English G2P engine vendored from [GrapheneOS SpeechServices](https://github.com/GrapheneOS/SpeechServices) (based on [**Misaki**](https://github.com/hexgrad/misaki)) converts text into phoneme sequences: a gold lexicon with morphology and POS-aware disambiguation, ICU-based number-to-words handling, and a small BART seq2seq fallback network for out-of-vocabulary words
+2. **Synthesis** — phonemes are fed into [**Kokoro**](https://github.com/hexgrad/kokoro), a high-quality multi-lingual neural TTS model, to produce a raw PCM audio waveform
+3. **Streaming playback** — sentences are synthesized and played concurrently using a producer-consumer pipeline so audio starts playing before the full text has been synthesized
 
 Audio output is 24 kHz mono 16-bit PCM.
 

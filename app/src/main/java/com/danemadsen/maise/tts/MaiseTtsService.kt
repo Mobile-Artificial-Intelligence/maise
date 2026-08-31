@@ -12,7 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue
 private const val TAG = "MaiseTtsService"
 private const val PREFS_NAME = "maise_tts_prefs"
 private const val PREF_VOICE = "selected_voice"
-private const val INIT_TIMEOUT_MS = 2500L
+private const val INIT_TIMEOUT_MS = 10_000L
 
 class MaiseTtsService : TextToSpeechService() {
 
@@ -155,7 +155,9 @@ class MaiseTtsService : TextToSpeechService() {
                 for ((index, sentence) in sentences.withIndex()) {
                     if (isStopped) break
                     val synthStart = System.currentTimeMillis()
-                    val pcm = engine.synthesize(sentence, voiceId, speed)
+                    val pcm = engine.synthesize(sentence, voiceId, speed) {
+                        if (isStopped) throw InterruptedException()
+                    }
                     Log.d(TAG, "Sentence $index synthesized in ${System.currentTimeMillis() - synthStart}ms, ${pcm.size} samples")
                     if (isStopped) break
                     queue.put(pcm)

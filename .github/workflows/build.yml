@@ -9,9 +9,7 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - 'app/**'
-      - 'open-phonemizer/**'
       - 'kokoro/**'
-      - 'kitten/**'
       - 'gradle/**'
       - 'build.gradle'
       - 'settings.gradle'
@@ -21,9 +19,7 @@ on:
     paths:
       - '.github/workflows/build.yml'
       - 'app/**'
-      - 'open-phonemizer/**'
       - 'kokoro/**'
-      - 'kitten/**'
       - 'gradle/**'
       - 'build.gradle'
       - 'settings.gradle'

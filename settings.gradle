@@ -1,5 +1,4 @@
 include ':app'
-include ':open-phonemizer'
 include ':kokoro'
 include ':whisper'
 rootProject.name = "Maise"
