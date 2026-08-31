@@ -2,7 +2,11 @@ package com.danemadsen.maise.g2p
 
 import android.content.Context
 import android.content.res.Resources
+import android.util.Log
 import com.danemadsen.maise.R
+import com.danemadsen.maise.g2p.fallback_network.FallbackNetwork
+import com.danemadsen.maise.g2p.fallback_network.G2PTokenizer
+import com.danemadsen.maise.g2p.fallback_network.G2PTokenizerConfig
 import java.nio.charset.StandardCharsets.UTF_8
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json

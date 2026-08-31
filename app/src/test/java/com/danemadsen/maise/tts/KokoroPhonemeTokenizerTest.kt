@@ -1,6 +1,8 @@
 package com.danemadsen.maise.tts
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -27,7 +29,7 @@ class KokoroPhonemeTokenizerTest {
             assertEquals("char U+%04X should produce exactly one inner token".format(ch.code), 3, ids.size)
             assertEquals(0, ids.first())
             assertEquals(0, ids.last())
-            assertEquals("char U+%04X must not map to pad (0)".format(ch.code), 0, ids[1])
+            assertTrue("char U+%04X must not map to pad (0)".format(ch.code), ids[1] != 0)
         }
     }
 
@@ -42,10 +44,10 @@ class KokoroPhonemeTokenizerTest {
 
     @Test
     fun unknownChars_areSkippedNotPadded() {
-        // ː and ↓ are in Kokoro's vocab but never emitted by the G2P; ̃ is not
-        // in either — whatever happens, none of them may become pad mid-sequence.
+        // # and @ are in neither Kokoro's vocab nor the G2P output alphabet —
+        // they must be dropped, never padded (ID 0) mid-sequence.
         val expected = KokoroPhonemeTokenizer.encode("abc").toList()
-        assertEquals(expected, KokoroPhonemeTokenizer.encode("aːb↓c").toList())
-        assertEquals(expected, KokoroPhonemeTokenizer.encode("ab̃c").toList())
+        assertEquals(expected, KokoroPhonemeTokenizer.encode("a#b@c").toList())
+        assertNotEquals(0, expected[1]) // sanity: "a" is a real token
     }
 }

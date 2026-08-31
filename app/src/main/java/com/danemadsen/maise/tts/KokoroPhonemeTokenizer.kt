@@ -158,7 +158,7 @@ object KokoroPhonemeTokenizer {
         "\u2197" to 172, // ↗ rise
         "\u2198" to 173, // ↘ fall
         // 174-176 not listed
-        "\u1D3B" to 177, // ᵻ
+        "\u1D7B" to 177, // U+1D7B (real IPA) — not the U+1D3B lookalike
     )
 
     /**

@@ -79,12 +79,13 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        coreLibraryDesugaringEnabled true
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '17'
     }
 
     // Prevent re-compression of large model files so they can be memory-mapped directly
@@ -122,8 +123,11 @@ dependencies {
     implementation 'org.apache.opennlp:opennlp-tools:2.5.10'
     implementation 'com.ibm.icu:icu4j:78.3'
     implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3'
-    implementation 'androidx.collection:collection-ktx:1.4.0'
+    implementation 'androidx.collection:collection:1.5.0'        // buildIntObjectMap/buildIntIntMap (1.5.0+)
     implementation 'org.slf4j:slf4j-nop:2.0.18'
+
+    // opennlp 2.5.10 uses Java 17 records — desugaring provides java.lang.Record below API 34
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'

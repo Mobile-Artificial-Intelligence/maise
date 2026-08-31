@@ -63,15 +63,15 @@ fun mergeTokens(tokens: List<MToken>, unk: String? = null): MToken {
             tokens.lastOrNull()?.text
                 ?: emptyList<MToken>()
             ),
-        tokens.maxBy { tk ->
-            tk.text.sumOf { char ->
-                if (char == char.lowercaseChar()) {
+        tokens.maxByOrNull { tk ->
+            tk.text.fold(0) { acc, char ->
+                acc + if (char == char.lowercaseChar()) {
                     1
                 } else {
                     2
                 }
             }
-        }.tag,
+        }?.tag ?: "",
         tokens.last().whitespace,
         phonemes,
         tokens.first().startTs,
@@ -104,8 +104,8 @@ fun mergeTokens(tokens: List<MToken>, unk: String? = null): MToken {
 private val DIPHTHONGS = "AIOQWYʤʧ".toBitSet()
 fun stressWeight(phonemes: String?): Int {
     return if (!phonemes.isNullOrEmpty()) {
-        phonemes.sumOf { char ->
-            if (char in DIPHTHONGS) {
+        phonemes.fold(0) { acc, char ->
+            acc + if (char in DIPHTHONGS) {
                 2
             } else {
                 1
@@ -461,6 +461,9 @@ class Lexicon(val british: Boolean, initialDictionary: Map<String, DictionaryVal
 
     @Suppress("UnusedParameter")
     fun isKnown(word: String?, tag: String?): Boolean {
+        if (word == null) {
+            return false
+        }
         if (word in this.golds || word in SYMBOLS) {
             return true
         } else if (!word.let { !it.isNullOrEmpty() && it.all { c -> c.isLetter() } } ||
@@ -490,7 +493,8 @@ class Lexicon(val british: Boolean, initialDictionary: Map<String, DictionaryVal
             word = word?.lowercase(Locale.ENGLISH)
             isPropn = tag == "PROPN"
         }
-        var (phonemes, rating: Int?) = Pair(this.golds[word], 4)
+        val phonemes = this.golds[word]
+        var rating: Int? = 4
         var resultPhonemes: String? = if (phonemes is DictionaryValue.StringValue) {
             phonemes.value
         } else {
@@ -1232,9 +1236,12 @@ class EnglishPhonemizer(
                     } else if (currentIterTkIndex + 1 == currentIterTks.size &&
                         (index + 1 == tokens.size || tokens[index + 1].tag != "NUM" /* "CD" */)
                     ) {
-                        currentIterTk.more?.set("currency", currency.text)
-                        currency.phonemes = ""
-                        currency.more?.set("rating", 4)
+                        val cur = currency
+                        if (cur != null) {
+                            currentIterTk.more?.set("currency", cur.text)
+                            cur.phonemes = ""
+                            cur.more?.set("rating", 4)
+                        }
                     }
                 } else if (0 < currentIterTkIndex &&
                     currentIterTkIndex < (currentIterTks.size - 1) &&
@@ -1347,8 +1354,8 @@ class EnglishPhonemizer(
             tokens[index].phonemes = applyStress(tokens[index].phonemes, -0.5)
             return
         } else if (indices.size < 2 ||
-            indices.sumOf { (bool, _, _) ->
-                if (bool) {
+            indices.fold(0) { acc, (bool, _, _) ->
+                acc + if (bool) {
                     1
                 } else {
                     0
