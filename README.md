@@ -1,5 +1,5 @@
 <div align="center" id = "top">
-  <img alt="logo" height="200px" src="https://raw.githubusercontent.com/Mobile-Artificial-Intelligence/maid/main/assets/graphics/logo.svg">
+  <img alt="logo" height="200px" src="https://raw.githubusercontent.com/Mobile-Artificial-Intelligence/maise/main/logo.svg">
 </div>
 
 # Maise - Mobile Artificial Intelligence Speech Engine
