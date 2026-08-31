@@ -6,18 +6,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
-    <!--
-      QUERY_ALL_PACKAGES: without this, RecognitionService gets
-      "caller doesn't have permission: android.permission.RECORD_AUDIO"
-      when checkPermissionAndStartDataDelivery() resolves the caller's
-      attribution chain. Required by WhisperIMEplus for the same reason.
-    -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+    <!-- Strip permissions injected by onnxruntime-android: the AAR's telemetry is
+         opt-in (OrtEnvironment.setTelemetry), never enabled here, and the provider
+         is removed below. Removing INTERNET makes "fully offline" OS-enforced. -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <!-- Mic is optional: the TTS engine works without one; all ASR entry points
+         degrade gracefully (ERROR_INSUFFICIENT_PERMISSIONS / ERROR_AUDIO). -->
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:allowBackup="true"
@@ -28,6 +26,11 @@
         android:supportsRtl="true"
         android:largeHeap="true"
         android:theme="@style/Theme.Maise">
+
+        <!-- Prevent ONNX Runtime's telemetry from initializing at process start. -->
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            tools:node="remove" />
 
         <activity
             android:name=".MainActivity"

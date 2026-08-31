@@ -1,6 +1,8 @@
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
 buildscript {
-    ext.kotlin_version = "1.9.25"
+    // 2.1.21: needed to consume Kotlin 2.0-metadata dependencies
+    // (android-vad 2.0.10); compatible with Gradle 8.11.1 / AGP 8.9.2
+    ext.kotlin_version = "2.1.21"
     repositories {
         google()
         mavenCentral()

@@ -108,5 +108,6 @@ dependencies {
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
     // WebRTC Voice Activity Detection — vendored from GitHub releases (avoids JitPack)
-    implementation files('libs/android-vad-webrtc-v2.0.9.aar')
+    // v2.0.10: 16 KB page-size compliant native libs (Play requirement for targetSdk 35+)
+    implementation files('libs/android-vad-webrtc-v2.0.10-release.aar')
 }
