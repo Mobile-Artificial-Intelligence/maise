@@ -5,6 +5,7 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
@@ -97,9 +98,10 @@ class MaiseAsrService : RecognitionService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand")
-        // DATA_SYNC foreground keeps the process alive. Has no eligible-state restriction
-        // so it always succeeds, even on START_STICKY restarts with no visible activity.
-        // RECORD_AUDIO access is handled by QUERY_ALL_PACKAGES + the caller's attribution.
+        // MICROPHONE foreground, matching the manifest's foregroundServiceType. Requires
+        // an eligible state (app visible, or another non-shortService FGS like
+        // MaiseKeepAliveService already active) and RECORD_AUDIO; both failures are
+        // caught below so a background start degrades gracefully instead of crashing.
         try {
             val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
                 .setContentTitle(getString(R.string.app_name))
@@ -109,8 +111,10 @@ class MaiseAsrService : RecognitionService() {
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setSilent(true)
                 .build()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                && checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
             } else {
                 startForeground(NOTIF_ID, notification)
             }
@@ -174,6 +178,8 @@ class MaiseAsrService : RecognitionService() {
     // VAD-based recording (ported from WhisperIMEplus Recorder.java)
     // -------------------------------------------------------------------------
 
+    // onStartListening verifies RECORD_AUDIO before calling this
+    @SuppressLint("MissingPermission")
     private fun startRecordingWithVad(listener: Callback) {
         val bufSize = maxOf(
             AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),

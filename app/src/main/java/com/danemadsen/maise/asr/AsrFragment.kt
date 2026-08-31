@@ -8,6 +8,7 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Bundle
+import android.annotation.SuppressLint
 import android.provider.Settings
 import android.view.LayoutInflater
 import android.view.View
@@ -103,6 +104,8 @@ class AsrFragment : Fragment() {
     // Recording
     // -------------------------------------------------------------------------
 
+    // Callers (checkPermissionAndRecord / permission callback) verify RECORD_AUDIO first
+    @SuppressLint("MissingPermission")
     private fun startRecording() {
         val minBuf = AudioRecord.getMinBufferSize(
             REC_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT

@@ -14,13 +14,15 @@ private const val KEEPALIVE_CHANNEL = "maise_keepalive"
 private const val KEEPALIVE_NOTIF_ID = 1002
 
 /**
- * Minimal foreground service whose only purpose is to maintain FOREGROUND_SERVICE_TYPE_DATA_SYNC.
+ * Minimal foreground service whose only purpose is to maintain
+ * FOREGROUND_SERVICE_TYPE_SPECIAL_USE.
  *
- * DATA_SYNC has no "eligible state" restriction on API 29–34, so startForeground() always
- * succeeds — including on START_STICKY restarts with no visible activity. This running
- * service satisfies the "another non-shortService FGS is already active in this app" eligible
- * state condition, which allows [MaiseAsrService] to call startForeground(MICROPHONE) when a
- * recognition session begins.
+ * SPECIAL_USE has no "eligible state" restriction and no runtime cap, so startForeground()
+ * always succeeds — including on START_STICKY restarts with no visible activity. (The
+ * original DATA_SYNC type gained a ~6-hour cumulative daily limit in Android 16 / API 36.)
+ * This running service satisfies the "another non-shortService FGS is already active in this
+ * app" eligible state condition, which allows [MaiseAsrService] to call
+ * startForeground(MICROPHONE) when a recognition session begins.
  */
 class MaiseKeepAliveService : Service() {
 
@@ -39,8 +41,8 @@ class MaiseKeepAliveService : Service() {
             .setSilent(true)
             .build()
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(KEEPALIVE_NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(KEEPALIVE_NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(KEEPALIVE_NOTIF_ID, notification)
         }

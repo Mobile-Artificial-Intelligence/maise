@@ -49,7 +49,7 @@ class MainActivity : AppCompatActivity() {
             requestRecordAudio.launch(Manifest.permission.RECORD_AUDIO)
         }
 
-        // Keep-alive service: DATA_SYNC foreground, keeps the process alive on restarts.
+        // Keep-alive service: specialUse foreground, keeps the process alive on restarts.
         startService(Intent(this, MaiseKeepAliveService::class.java))
 
         // Pre-start the ASR service so it is in "started" state before any speech

@@ -20,12 +20,12 @@ def getCommitCount = { ->
 
 android {
     namespace 'com.danemadsen.maise'
-    compileSdkVersion 35
+    compileSdkVersion 36
 
     defaultConfig {
         applicationId "com.danemadsen.maise"
         minSdkVersion 26
-        targetSdkVersion 35
+        targetSdkVersion 36
         versionCode getCommitCount()
         versionName "1.0.0"
 
@@ -103,7 +103,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.6.2'
 
-    implementation 'com.microsoft.onnxruntime:onnxruntime-android:latest.release'
+    implementation 'com.microsoft.onnxruntime:onnxruntime-android:1.29.0'
     implementation 'androidx.viewpager2:viewpager2:1.0.0'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
 
