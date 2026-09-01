@@ -7,6 +7,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeechService
 import android.speech.tts.Voice
 import android.util.Log
+import java.util.Locale
 import java.util.concurrent.LinkedBlockingQueue
 
 private const val TAG = "MaiseTtsService"
@@ -50,20 +51,63 @@ class MaiseTtsService : TextToSpeechService() {
     }
 
     // -------------------------------------------------------------------------
-    // Language support — Kokoro works best with English; report English as supported
+    // Language support — availability is checked against the shipped voices.
+    // Countries not shipped for a supported language (e.g. en-AU) still report
+    // LANG_AVAILABLE and resolve to a voice of the same language, so English
+    // variants (AU, CA, IN, ...) are served by the en-US/en-GB voices.
     // -------------------------------------------------------------------------
 
-    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int {
-        return TextToSpeech.LANG_AVAILABLE
+    @Volatile
+    private var loadedLocale: Locale? = null
+
+    private fun availabilityOf(lang: String?, country: String?): Int {
+        if (lang.isNullOrBlank()) return TextToSpeech.LANG_NOT_SUPPORTED
+        val hasLanguage = ALL_VOICES.any { it.locale.language.equals(lang, ignoreCase = true) }
+        if (!hasLanguage) return TextToSpeech.LANG_NOT_SUPPORTED
+        val hasCountry = country?.isNotBlank() == true &&
+            ALL_VOICES.any {
+                it.locale.language.equals(lang, true) && it.locale.country.equals(country, true)
+            }
+        return if (hasCountry) TextToSpeech.LANG_COUNTRY_AVAILABLE else TextToSpeech.LANG_AVAILABLE
     }
+
+    override fun onIsLanguageAvailable(lang: String?, country: String?, variant: String?): Int =
+        availabilityOf(lang, country)
 
     override fun onLoadLanguage(lang: String?, country: String?, variant: String?): Int {
-        return TextToSpeech.LANG_AVAILABLE
+        val availability = availabilityOf(lang, country)
+        if (availability >= TextToSpeech.LANG_AVAILABLE) {
+            loadedLocale = runCatching {
+                Locale.Builder()
+                    .apply {
+                        setLanguage(lang.orEmpty())
+                        if (!country.isNullOrBlank()) setRegion(country)
+                    }
+                    .build()
+            }.getOrNull() ?: loadedLocale
+        }
+        return availability
     }
 
-    override fun onGetLanguage(): Array<String> = arrayOf("en", "US", "")
+    override fun onGetLanguage(): Array<String> {
+        val locale = loadedLocale ?: Locale.US
+        return arrayOf(locale.language, locale.country, "")
+    }
 
-    override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String = DEFAULT_VOICE_ID
+    override fun onGetDefaultVoiceNameFor(lang: String, country: String, variant: String): String =
+        voiceMatching(lang, country) ?: DEFAULT_VOICE_ID
+
+    /**
+     * First voice whose locale matches lang+country, else the first voice of
+     * that language (so en-AU and friends resolve onto an English voice), or
+     * null when the language has no shipped voice at all.
+     */
+    private fun voiceMatching(lang: String?, country: String?): String? {
+        if (lang.isNullOrBlank()) return null
+        val sameLanguage = ALL_VOICES.filter { it.locale.language.equals(lang, ignoreCase = true) }
+        return sameLanguage.firstOrNull { it.locale.country.equals(country, ignoreCase = true) }?.id
+            ?: sameLanguage.firstOrNull()?.id
+    }
 
     override fun onGetFeaturesForLanguage(lang: String, country: String, variant: String): Set<String> = emptySet()
 
@@ -103,13 +147,15 @@ class MaiseTtsService : TextToSpeechService() {
         isStopped = false
 
         // Resolve voice: prefer request.voiceName (set by the framework when the caller uses
-        // setVoice()), then SharedPreferences, then hard default.
+        // setVoice()), then a voice matching the request's language (covers callers that only
+        // used setLanguage(), including variants like en-AU that map onto a shipped voice),
+        // then SharedPreferences, then hard default.
         // Do NOT use request.params["voiceName"] — that key is unreliable across OEMs.
         val requestedVoice = request.voiceName
             ?.takeIf { it.isNotEmpty() }
+            ?: voiceMatching(request.language, request.country)
             ?: getSharedPreferences(PREFS_NAME, MODE_PRIVATE).getString(PREF_VOICE, DEFAULT_VOICE_ID)
-            ?: DEFAULT_VOICE_ID
-        val voiceId = if (findVoiceById(requestedVoice) != null) requestedVoice else DEFAULT_VOICE_ID
+        val voiceId = requestedVoice?.takeIf { findVoiceById(it) != null } ?: DEFAULT_VOICE_ID
 
         val text = request.charSequenceText?.toString()?.takeIf { it.isNotBlank() }
             ?: run { callback.done(); return }

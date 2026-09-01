@@ -58,6 +58,38 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Engine-contract activities consumed by system Settings
+          (Settings > Accessibility > Text-to-speech output) and legacy TTS
+          clients. Both are invisible: they start, set a result, and finish
+          immediately. Without GET_SAMPLE_TEXT the "Listen to an example"
+          preview is silently dead; without CHECK_TTS_DATA Settings cannot
+          populate its language picker for this engine.
+        -->
+        <activity
+            android:name=".tts.GetSampleTextActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.GET_SAMPLE_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <activity
+            android:name=".tts.CheckTtsDataActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.speech.tts.engine.CHECK_TTS_DATA" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
         <service
             android:name=".tts.MaiseTtsService"
             android:label="@string/app_name"
