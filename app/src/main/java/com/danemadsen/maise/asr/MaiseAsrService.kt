@@ -49,9 +49,16 @@ private const val MAX_BYTES         = SAMPLE_RATE * 2 * 30  // 30 seconds
  * Ported from WhisperIMEplus (WhisperRecognitionService + Recorder) with our asset-based
  * WhisperASR substituted for their external-storage model loader.
  *
- * Callers must hold a granted [android.permission.RECORD_AUDIO], enforced both by this
- * service's android:permission manifest attribute and by the framework's
- * checkPermissionAndStartDataDelivery() validating the caller's AttributionSource.
+ * The QUERY_ALL_PACKAGES permission in the manifest is critical: without it the
+ * RecognitionService base class cannot resolve the caller's attribution chain
+ * (package-visibility filtering hides other apps from this process), producing
+ * "caller doesn't have permission: android.permission.RECORD_AUDIO" and firing
+ * onCancel for every external caller — while in-app use keeps working, since an
+ * app is always visible to itself. Do not remove it again.
+ *
+ * Callers must also hold a granted [android.permission.RECORD_AUDIO], enforced
+ * by the framework's checkPermissionAndStartDataDelivery() against the caller's
+ * AttributionSource.
  *
  * Recording uses WebRTC VAD for automatic end-of-speech detection (same as WhisperIMEplus).
  * onStopListening() provides a manual fallback stop.

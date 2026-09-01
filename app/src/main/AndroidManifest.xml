@@ -7,6 +7,16 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
+    <!--
+      QUERY_ALL_PACKAGES: without this, RecognitionService gets
+      "caller doesn't have permission: android.permission.RECORD_AUDIO"
+      when checkPermissionAndStartDataDelivery() resolves the caller's
+      attribution chain. Required by WhisperIMEplus for the same reason.
+    -->
+    <uses-permission
+        android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <!-- Strip permissions injected by onnxruntime-android: the AAR's telemetry is
          opt-in (OrtEnvironment.setTelemetry), never enabled here, and the provider
          is removed below. Removing INTERNET makes "fully offline" OS-enforced. -->
