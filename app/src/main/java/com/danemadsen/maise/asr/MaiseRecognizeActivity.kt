@@ -107,8 +107,16 @@ class MaiseRecognizeActivity : AppCompatActivity() {
         }
         override fun onResults(results: Bundle) {
             val matches = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            val scores = results.getFloatArray(SpeechRecognizer.CONFIDENCE_SCORES)
             val data = Intent().apply {
                 putStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS, matches)
+                // Chrome's omnibox voice search (VoiceRecognitionIntentHandler) drops
+                // the entire result when EXTRA_CONFIDENCE_SCORES is absent or its
+                // length doesn't match EXTRA_RESULTS — always return one per match.
+                putExtra(
+                    RecognizerIntent.EXTRA_CONFIDENCE_SCORES,
+                    FloatArray(matches?.size ?: 0) { i -> scores?.getOrNull(i) ?: 1.0f }
+                )
             }
             setResult(RESULT_OK, data)
             finish()
