@@ -1,17 +1,22 @@
 package com.danemadsen.maise.asr
 
+import android.animation.AnimatorSet
+import android.util.Log
+import android.animation.ObjectAnimator
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.Color
 import android.os.Bundle
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import android.view.Gravity
-import android.widget.LinearLayout
-import android.widget.ProgressBar
-import android.widget.TextView
+import android.view.View
+import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import androidx.appcompat.app.AppCompatActivity
+import androidx.transition.ChangeBounds
+import androidx.transition.TransitionManager
+import com.danemadsen.maise.R
+import com.danemadsen.maise.databinding.ActivityRecognizeBinding
 
 /**
  * Floating activity that handles [RecognizerIntent.ACTION_RECOGNIZE_SPEECH].
@@ -21,35 +26,45 @@ import androidx.appcompat.app.AppCompatActivity
  * to [MaiseAsrService] via [SpeechRecognizer] and returns
  * [RecognizerIntent.EXTRA_RESULTS] to the calling app.
  *
+ * Shown as a compact rounded card over a dimmed view of the calling app, with a
+ * waveform reacting to the caller's voice level and the partial transcript
+ * streamed as Whisper decodes.
+ *
  * Equivalent to WhisperIMEplus's WhisperRecognizeActivity.
  */
 class MaiseRecognizeActivity : AppCompatActivity() {
 
+    private companion object {
+        const val TAG = "MaiseRecognizeActivity"
+    }
+
     private var recognizer: SpeechRecognizer? = null
-    private var statusText: TextView? = null
+    private var binding: ActivityRecognizeBinding? = null
+    private var rmsLinkLogged = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val view = ActivityRecognizeBinding.inflate(layoutInflater)
+        binding = view
+        setContentView(view.root)
 
-        // Programmatic dialog-style layout
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(64, 64, 64, 64)
-            setBackgroundColor(Color.parseColor("#CC1a1a2e"))
+        // Card pop-in: fade + slight scale-up. Done in code rather than relying on
+        // window animations, which some OEM builds ignore for floating windows.
+        view.recognizeCard.apply {
+            alpha = 0f
+            scaleY = 0.92f
+            scaleX = 0.92f
+            AnimatorSet().apply {
+                playTogether(
+                    ObjectAnimator.ofFloat(view.recognizeCard, "alpha", 0f, 1f),
+                    ObjectAnimator.ofFloat(view.recognizeCard, "scaleX", 0.92f, 1f),
+                    ObjectAnimator.ofFloat(view.recognizeCard, "scaleY", 0.92f, 1f)
+                )
+                duration = 200
+                interpolator = DecelerateInterpolator()
+                start()
+            }
         }
-
-        statusText = TextView(this).apply {
-            text = "Listening\u2026"
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            gravity = Gravity.CENTER
-        }
-        val spinner = ProgressBar(this)
-
-        root.addView(spinner)
-        root.addView(statusText)
-        setContentView(root)
 
         recognizer = SpeechRecognizer.createSpeechRecognizer(
             this,
@@ -64,15 +79,23 @@ class MaiseRecognizeActivity : AppCompatActivity() {
 
     private val recognitionListener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
-            statusText?.text = "Listening\u2026"
+            binding?.recognizeStatus?.text = getString(R.string.recognize_listening)
         }
         override fun onBeginningOfSpeech() {
-            statusText?.text = "Listening\u2026"
+            binding?.recognizeStatus?.text = getString(R.string.recognize_listening)
         }
-        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onRmsChanged(rmsdB: Float) {
+            if (!rmsLinkLogged) {
+                rmsLinkLogged = true
+                Log.d(TAG, "onRmsChanged link established: $rmsdB dB")
+            }
+            // Service emits dBFS (roughly -60..0); normalize into the view's 0..1
+            binding?.recognizeWaveform?.setLevel(((rmsdB + 45f) / 35f).coerceIn(0f, 1f))
+        }
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {
-            statusText?.text = "Processing\u2026"
+            binding?.recognizeStatus?.text = getString(R.string.recognize_processing)
+            binding?.recognizeWaveform?.setProcessing(true)
         }
         override fun onError(error: Int) {
             setResult(RESULT_CANCELED)
@@ -86,7 +109,24 @@ class MaiseRecognizeActivity : AppCompatActivity() {
             setResult(RESULT_OK, data)
             finish()
         }
-        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onPartialResults(partialResults: Bundle?) {
+            val partial = partialResults
+                ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+            if (!partial.isNullOrBlank()) {
+                val view = binding ?: return
+                // First partial: reveal the transcript area with a smooth bounds
+                // change instead of the card snapping taller.
+                if (view.recognizeText.visibility == View.GONE) {
+                    TransitionManager.beginDelayedTransition(
+                        view.root as ViewGroup,
+                        ChangeBounds().apply { duration = 200 }
+                    )
+                    view.recognizeText.visibility = View.VISIBLE
+                }
+                view.recognizeText.text = partial
+            }
+        }
         override fun onEvent(eventType: Int, params: Bundle?) {}
     }
 

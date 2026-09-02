@@ -58,6 +58,17 @@ class WhisperTokenizer(context: Context) {
         return bytes.toByteArray().toString(Charsets.UTF_8)
     }
 
+    /**
+     * True if [tokenId] begins a new word — i.e. its BPE token string starts with
+     * the byte-level representation of a space. Used to emit partial transcripts
+     * at word boundaries while decoding.
+     */
+    fun isWordStart(tokenId: Int): Boolean {
+        val tokenStr = idToToken[tokenId] ?: return false
+        val firstByte = unicodeToByte[tokenStr.first()] ?: return false
+        return firstByte == ' '.code.toByte()
+    }
+
     private fun loadVocab(context: Context): Map<Int, String> {
         val json = context.assets.open("vocab.json").bufferedReader().use { it.readText() }
         val obj = JSONObject(json)

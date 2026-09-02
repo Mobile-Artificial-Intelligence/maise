@@ -28,4 +28,25 @@
         <item name="cornerSize">16dp</item>
     </style>
 
+    <!-- Floating dialog theme for MaiseRecognizeActivity: compact card over a
+         dimmed (but visible) view of the calling app. -->
+    <style name="Theme.Maise.Recognize">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:backgroundDimAmount">0.4</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@style/RecognizeWindowAnimation</item>
+        <item name="windowNoTitle">true</item>
+        <!-- Keep the card at its literal surface color — MDC's elevation overlay
+             otherwise lightens it in proportion to cardElevation. -->
+        <item name="elevationOverlayEnabled">false</item>
+    </style>
+
+    <style name="RecognizeWindowAnimation">
+        <item name="android:windowEnterAnimation">@anim/recognize_window_enter</item>
+        <item name="android:windowExitAnimation">@anim/recognize_window_exit</item>
+    </style>
+
 </resources>

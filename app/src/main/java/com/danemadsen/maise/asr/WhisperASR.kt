@@ -94,12 +94,19 @@ class WhisperASR(context: Context) {
      * Transcribe [audioSamples] (16-bit PCM, any sample rate) to text.
      * The audio is resampled linearly to 16 kHz and clamped to 30 seconds.
      *
+     * [onPartial], if provided, is invoked with the accumulated transcript at each
+     * word boundary as the decoder progresses, so callers can stream live text.
+     *
      * Returns the transcribed text, or an empty string on failure.
      */
-    fun transcribe(audioSamples: ShortArray, inputSampleRate: Int): String {
+    fun transcribe(
+        audioSamples: ShortArray,
+        inputSampleRate: Int,
+        onPartial: ((String) -> Unit)? = null
+    ): String {
         val floatAudio = resampleToFloat(audioSamples, inputSampleRate)
         val mel        = computeLogMelSpectrogram(floatAudio)
-        return runInference(mel)
+        return runInference(mel, onPartial)
     }
 
     // -------------------------------------------------------------------------
@@ -297,7 +304,7 @@ class WhisperASR(context: Context) {
     // ONNX inference: encoder → decoder loop
     // -------------------------------------------------------------------------
 
-    private fun runInference(melData: FloatArray): String {
+    private fun runInference(melData: FloatArray, onPartial: ((String) -> Unit)?): String {
         // --- Encoder ---
         val melBuf    = FloatBuffer.wrap(melData)
         val melTensor = OnnxTensor.createTensor(
@@ -336,7 +343,15 @@ class WhisperASR(context: Context) {
 
                 allTokens.add(nextToken)
                 if (nextToken == WHISPER_TOKEN_EOT) break
-                if (nextToken < WHISPER_TOKEN_EOT) textTokens.add(nextToken)
+                if (nextToken < WHISPER_TOKEN_EOT) {
+                    textTokens.add(nextToken)
+                    // Stream the accumulated text at word boundaries so callers
+                    // can show the transcript as it decodes.
+                    if (onPartial != null && tokenizer.isWordStart(nextToken)) {
+                        val partial = tokenizer.decode(textTokens).trim()
+                        if (partial.isNotEmpty()) onPartial(partial)
+                    }
+                }
                 // Timestamp or other special token: skip from text but keep in sequence
             }
         } finally {

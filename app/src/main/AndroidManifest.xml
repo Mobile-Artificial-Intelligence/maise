@@ -60,7 +60,7 @@
             android:name=".asr.MaiseRecognizeActivity"
             android:exported="true"
             android:launchMode="singleInstance"
-            android:theme="@style/Theme.AppCompat.Dialog"
+            android:theme="@style/Theme.Maise.Recognize"
             android:configChanges="orientation|screenLayout|screenSize|keyboardHidden">
             <intent-filter>
                 <action android:name="android.speech.action.RECOGNIZE_SPEECH" />

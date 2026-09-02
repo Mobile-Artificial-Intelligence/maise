@@ -11,7 +11,7 @@ import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
-import android.os.RemoteException
+import android.os.SystemClock
 import android.speech.RecognitionService
 import android.speech.SpeechRecognizer
 import android.util.Log
@@ -42,6 +42,7 @@ private const val VAD_FRAME_BYTES   = VAD_FRAME_SAMPLES * 2  // 960 bytes, 16-bi
 
 private const val SAMPLE_RATE       = 16000
 private const val MAX_BYTES         = SAMPLE_RATE * 2 * 30  // 30 seconds
+private const val RMS_INTERVAL_MS   = 66L                   // ~15 level updates/s
 
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
@@ -239,6 +240,7 @@ class MaiseAsrService : RecognitionService() {
             val output = ByteArrayOutputStream()
             val chunk  = ByteArray(VAD_FRAME_BYTES)
             var speechStarted = false
+            var lastRmsAt = 0L
 
             rec.startRecording()
             // Mirror WhisperIMEplus: readyForSpeech then beginningOfSpeech right at start
@@ -254,10 +256,17 @@ class MaiseAsrService : RecognitionService() {
                 }
                 output.write(chunk, 0, read)
 
+                // Real audio level for the caller's UI, throttled to ~15 updates/s
+                // (each dispatch is a Binder transaction into the caller's process).
+                val now = SystemClock.elapsedRealtime()
+                if (now - lastRmsAt >= RMS_INTERVAL_MS) {
+                    lastRmsAt = now
+                    listener.safe { rmsChanged(frameRmsDb(chunk, read)) }
+                }
+
                 if (vad.isSpeech(chunk)) {
                     if (!speechStarted) {
                         speechStarted = true
-                        try { listener.rmsChanged(10f) } catch (_: RemoteException) {}
                     }
                 } else if (speechStarted) {
                     // VAD detected silence after speech — auto-stop (same as WhisperIMEplus)
@@ -308,7 +317,16 @@ class MaiseAsrService : RecognitionService() {
         }
 
         try {
-            val text = engine.transcribe(samples, SAMPLE_RATE)
+            // Stream word-boundary partials so callers can show live text while decoding.
+            val text = engine.transcribe(samples, SAMPLE_RATE) { partial ->
+                listener.safe {
+                    partialResults(Bundle().apply {
+                        putStringArrayList(
+                            SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(partial)
+                        )
+                    })
+                }
+            }
             Log.d(TAG, "Transcribed: \"$text\"")
 
             if (text.isBlank()) {
@@ -335,5 +353,25 @@ class MaiseAsrService : RecognitionService() {
         try { block() } catch (e: Exception) {
             Log.w(TAG, "Callback IPC failed: ${e.message}")
         }
+    }
+
+    /**
+     * RMS level of a 16-bit little-endian PCM frame, in dBFS (0 = full scale,
+     * roughly -60 for silence). Forwarded via [Callback.rmsChanged] so callers
+     * can animate a level meter.
+     */
+    private fun frameRmsDb(chunk: ByteArray, length: Int): Float {
+        var sumSquares = 0.0
+        val sampleCount = length / 2
+        for (i in 0 until sampleCount) {
+            val lo = chunk[i * 2].toInt()
+            val hi = chunk[i * 2 + 1].toInt()
+            val sample = ((hi shl 8) or (lo and 0xFF)).toShort().toInt()
+            sumSquares += (sample * sample).toDouble()
+        }
+        if (sampleCount == 0) return -60f
+        val rms = kotlin.math.sqrt(sumSquares / sampleCount)
+        if (rms < 1.0) return -60f
+        return (20.0 * kotlin.math.log10(rms / 32768.0)).toFloat()
     }
 }

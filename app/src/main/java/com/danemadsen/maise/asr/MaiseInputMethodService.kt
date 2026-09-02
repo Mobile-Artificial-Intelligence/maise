@@ -1,11 +1,11 @@
 package com.danemadsen.maise.asr
 
 import android.inputmethodservice.InputMethodService
+import android.view.Gravity
 import android.view.View
 import android.widget.TextView
-import android.graphics.Color
-import android.graphics.Typeface
-import android.view.Gravity
+import androidx.core.content.ContextCompat
+import com.danemadsen.maise.R
 
 /**
  * Minimal InputMethodService whose primary purpose is to run in the same process as
@@ -28,12 +28,12 @@ class MaiseInputMethodService : InputMethodService() {
 
     override fun onCreateInputView(): View =
         TextView(this).apply {
-            text = "Maise Voice Recognition\nSwitch to another keyboard for text input.\nSpeech-to-text is available to all apps via Settings \u2192 Language & Input \u2192 Speech \u2192 Speech Recognition Service."
-            setTextColor(Color.WHITE)
-            setBackgroundColor(Color.parseColor("#1a1a2e"))
+            text = getString(R.string.ime_description)
+            setTextColor(ContextCompat.getColor(this@MaiseInputMethodService, R.color.on_surface))
+            setBackgroundColor(ContextCompat.getColor(this@MaiseInputMethodService, R.color.surface))
             textSize = 14f
-            typeface = Typeface.DEFAULT
             gravity = Gravity.CENTER
-            setPadding(48, 64, 48, 64)
+            val dp = resources.displayMetrics.density.toInt()
+            setPadding(16 * dp, 20 * dp, 16 * dp, 20 * dp)
         }
 }

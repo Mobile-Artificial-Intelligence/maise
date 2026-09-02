@@ -5,6 +5,10 @@
     <color name="on_surface">#FFFFFF</color>
     <color name="hint_text">#99FFFFFF</color>
 
+    <!-- Brand waveform gradient (resources/icon_foreground.svg) -->
+    <color name="waveform_start">#FF00F9FF</color>
+    <color name="waveform_end">#FFD901FF</color>
+
     <!-- Legacy colours kept for resource references -->
     <color name="purple_200">#FFBB86FC</color>
     <color name="purple_500">#FF6200EE</color>
