@@ -4,7 +4,6 @@
 
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!--
@@ -126,20 +125,6 @@
             <meta-data
                 android:name="android.speech.tts"
                 android:resource="@xml/tts_engine" />
-        </service>
-
-        <!--
-          Keep-alive FGS (see MaiseKeepAliveService): keeps a non-shortService FGS active
-          so MaiseAsrService can start its microphone FGS from the background. specialUse
-          is declared with a subtype because dataSync gained a ~6h daily cap in API 36.
-        -->
-        <service
-            android:name=".asr.MaiseKeepAliveService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="maise.asr.keepalive.v1" />
         </service>
 
         <service

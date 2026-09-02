@@ -10,7 +10,6 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.danemadsen.maise.asr.MaiseAsrService
-import com.danemadsen.maise.asr.MaiseKeepAliveService
 import com.danemadsen.maise.databinding.ActivityMainBinding
 import com.google.android.material.tabs.TabLayoutMediator
 
@@ -48,9 +47,6 @@ class MainActivity : AppCompatActivity() {
             != PackageManager.PERMISSION_GRANTED) {
             requestRecordAudio.launch(Manifest.permission.RECORD_AUDIO)
         }
-
-        // Keep-alive service: specialUse foreground, keeps the process alive on restarts.
-        startService(Intent(this, MaiseKeepAliveService::class.java))
 
         // Pre-start the ASR service so it is in "started" state before any speech
         // client binds to it. START_STICKY ensures the service restarts if killed.

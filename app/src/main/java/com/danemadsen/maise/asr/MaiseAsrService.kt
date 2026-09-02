@@ -127,9 +127,11 @@ class MaiseAsrService : RecognitionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "onStartCommand")
         // MICROPHONE foreground, matching the manifest's foregroundServiceType. Requires
-        // an eligible state (app visible, or another non-shortService FGS like
-        // MaiseKeepAliveService already active) and RECORD_AUDIO; both failures are
-        // caught below so a background start degrades gracefully instead of crashing.
+        // the app to be in an eligible state (e.g. visible) plus RECORD_AUDIO; both
+        // failures are caught below so a background start degrades gracefully instead of
+        // crashing. External binds keep working without the FGS: the caller-attribution
+        // path (checkPermissionAndStartDataDelivery) allows the mic while a foreground
+        // client is bound, verified on Android 17.
         try {
             val notification = NotificationCompat.Builder(this, NOTIF_CHANNEL)
                 .setContentTitle(getString(R.string.app_name))
