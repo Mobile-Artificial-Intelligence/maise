@@ -85,7 +85,10 @@ class MaiseAsrService : RecognitionService() {
     @Volatile private var isRecording = false
     @Volatile private var activeJob: Job? = null
 
-    private val sounds = RecognitionSounds(this)
+    // Lazy, not a field initializer: a Service's base context is attached only
+    // after the constructor, so touching this at <init> time crashes with a
+    // NullPointerException inside ContextWrapper.getApplicationContext().
+    private val sounds by lazy { RecognitionSounds(this) }
 
     private val initLock = Object()
 
