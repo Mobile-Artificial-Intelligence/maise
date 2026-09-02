@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.speech.RecognitionService
+import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -43,6 +44,13 @@ private const val VAD_FRAME_BYTES   = VAD_FRAME_SAMPLES * 2  // 960 bytes, 16-bi
 private const val SAMPLE_RATE       = 16000
 private const val MAX_BYTES         = SAMPLE_RATE * 2 * 30  // 30 seconds
 private const val RMS_INTERVAL_MS   = 66L                   // ~15 level updates/s
+
+// VadWebRTC debounces internally (isContinuousSpeech): speech latches after ~7
+// consecutive speech frames, and unlatches only after 27 consecutive silent
+// 30 ms frames — these values drive that state machine, not a raw classifier.
+private const val VAD_SPEECH_MS     = 200
+private const val VAD_SILENCE_MS    = 800
+private const val NO_SPEECH_TIMEOUT_MS = 10_000L            // abort if speech never latches
 
 /**
  * Android [RecognitionService] backed by distil-whisper/distil-small.en via ONNX Runtime.
@@ -165,7 +173,13 @@ class MaiseAsrService : RecognitionService() {
             return
         }
 
-        startRecordingWithVad(listener)
+        // Partials are opt-in via the documented EXTRA_PARTIAL_RESULTS extra —
+        // callers that don't request them get exactly one final results().
+        val wantPartials = recognizerIntent.getBooleanExtra(
+            RecognizerIntent.EXTRA_PARTIAL_RESULTS, false
+        )
+
+        startRecordingWithVad(listener, wantPartials)
     }
 
     override fun onStopListening(listener: Callback) {
@@ -187,7 +201,7 @@ class MaiseAsrService : RecognitionService() {
 
     // onStartListening verifies RECORD_AUDIO before calling this
     @SuppressLint("MissingPermission")
-    private fun startRecordingWithVad(listener: Callback) {
+    private fun startRecordingWithVad(listener: Callback, wantPartials: Boolean) {
         val bufSize = maxOf(
             AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT),
             VAD_FRAME_BYTES
@@ -233,19 +247,18 @@ class MaiseAsrService : RecognitionService() {
                 .setSampleRate(SampleRate.SAMPLE_RATE_16K)
                 .setFrameSize(FrameSize.FRAME_SIZE_480)
                 .setMode(Mode.VERY_AGGRESSIVE)
-                .setSilenceDurationMs(800)
-                .setSpeechDurationMs(200)
+                .setSilenceDurationMs(VAD_SILENCE_MS)
+                .setSpeechDurationMs(VAD_SPEECH_MS)
                 .build()
 
             val output = ByteArrayOutputStream()
             val chunk  = ByteArray(VAD_FRAME_BYTES)
             var speechStarted = false
             var lastRmsAt = 0L
+            val startedAt = SystemClock.elapsedRealtime()
 
             rec.startRecording()
-            // Mirror WhisperIMEplus: readyForSpeech then beginningOfSpeech right at start
             listener.safe { readyForSpeech(Bundle()) }
-            listener.safe { beginningOfSpeech() }
             Log.d(TAG, "Recording started (VAD)")
 
             while (isRecording && output.size() < MAX_BYTES) {
@@ -264,14 +277,28 @@ class MaiseAsrService : RecognitionService() {
                     listener.safe { rmsChanged(frameRmsDb(chunk, read)) }
                 }
 
-                if (vad.isSpeech(chunk)) {
-                    if (!speechStarted) {
-                        speechStarted = true
-                    }
-                } else if (speechStarted) {
-                    // VAD detected silence after speech — auto-stop (same as WhisperIMEplus)
-                    Log.d(TAG, "VAD: silence after speech, stopping")
+                // Abort if speech never latches — otherwise we'd record 30 s of
+                // silence and hand Whisper a hallucination-prone clip.
+                if (!speechStarted && now - startedAt >= NO_SPEECH_TIMEOUT_MS) {
+                    Log.d(TAG, "VAD: no speech detected, timing out")
                     break
+                }
+
+                // VAD needs a full frame; on short reads the buffer tail is stale.
+                if (read == VAD_FRAME_BYTES) {
+                    if (vad.isSpeech(chunk)) {
+                        if (!speechStarted) {
+                            speechStarted = true
+                            listener.safe { beginningOfSpeech() }
+                        }
+                    } else if (speechStarted) {
+                        // VadWebRTC debounces internally: isSpeech() keeps returning
+                        // true through gaps until ~27 consecutive silent 30 ms frames
+                        // (~810 ms) elapse, so mid-sentence pauses are tolerated —
+                        // reaching here means sustained end-of-utterance silence.
+                        Log.d(TAG, "VAD: sustained silence after speech, stopping")
+                        break
+                    }
                 }
             }
 
@@ -281,6 +308,12 @@ class MaiseAsrService : RecognitionService() {
             isRecording = false
 
             Log.d(TAG, "Recording done, ${output.size()} bytes")
+
+            // Speech never latched — report a timeout rather than transcribing noise.
+            if (!speechStarted) {
+                listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
+                return@launch
+            }
 
             // Mirror WhisperIMEplus threshold: > 6400 bytes (~0.2 s at 16 kHz 16-bit)
             if (output.size() <= 6400) {
@@ -293,7 +326,7 @@ class MaiseAsrService : RecognitionService() {
             val samples = ShortArray(bytes.size / 2)
             ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(samples)
 
-            transcribeAsync(samples, listener)
+            transcribeAsync(samples, listener, wantPartials)
         }
     }
 
@@ -301,7 +334,7 @@ class MaiseAsrService : RecognitionService() {
     // ASR inference
     // -------------------------------------------------------------------------
 
-    private fun transcribeAsync(samples: ShortArray, listener: Callback) {
+    private fun transcribeAsync(samples: ShortArray, listener: Callback, wantPartials: Boolean) {
         // transcribeAsync is called from within activeJob's coroutine, so no new launch needed
         listener.safe { endOfSpeech() }
 
@@ -317,16 +350,21 @@ class MaiseAsrService : RecognitionService() {
         }
 
         try {
-            // Stream word-boundary partials so callers can show live text while decoding.
-            val text = engine.transcribe(samples, SAMPLE_RATE) { partial ->
-                listener.safe {
-                    partialResults(Bundle().apply {
-                        putStringArrayList(
-                            SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(partial)
-                        )
-                    })
+            // Stream word-boundary partials, but only to callers that opted in
+            // via EXTRA_PARTIAL_RESULTS — unsolicited partials can be mistaken
+            // for final text by apps that don't expect them.
+            val onPartial: ((String) -> Unit)? = if (wantPartials) {
+                { partial ->
+                    listener.safe {
+                        partialResults(Bundle().apply {
+                            putStringArrayList(
+                                SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(partial)
+                            )
+                        })
+                    }
                 }
-            }
+            } else null
+            val text = engine.transcribe(samples, SAMPLE_RATE, onPartial)
             Log.d(TAG, "Transcribed: \"$text\"")
 
             if (text.isBlank()) {

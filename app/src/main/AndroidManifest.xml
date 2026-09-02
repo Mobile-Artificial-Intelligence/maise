@@ -59,7 +59,7 @@
         <activity
             android:name=".asr.MaiseRecognizeActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
+            android:noHistory="true"
             android:theme="@style/Theme.Maise.Recognize"
             android:configChanges="orientation|screenLayout|screenSize|keyboardHidden">
             <intent-filter>

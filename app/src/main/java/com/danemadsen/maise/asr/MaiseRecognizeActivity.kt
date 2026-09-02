@@ -72,8 +72,12 @@ class MaiseRecognizeActivity : AppCompatActivity() {
         )
         recognizer?.setRecognitionListener(recognitionListener)
 
-        val listenIntent = (intent?.takeIf { it.hasExtra(RecognizerIntent.EXTRA_LANGUAGE) }
-            ?: Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH))
+        // Forward the caller's language extra, but force partials on — the
+        // popover's live text is our UI decision, not the caller's.
+        val listenIntent = Intent(
+            intent?.takeIf { it.hasExtra(RecognizerIntent.EXTRA_LANGUAGE) }
+                ?: Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+        ).apply { putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true) }
         recognizer?.startListening(listenIntent)
     }
 
