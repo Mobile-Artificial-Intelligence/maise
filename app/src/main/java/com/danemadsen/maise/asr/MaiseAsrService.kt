@@ -60,12 +60,18 @@ private const val NO_SPEECH_TIMEOUT_MS = 10_000L            // abort if speech n
  * Ported from WhisperIMEplus (WhisperRecognitionService + Recorder) with our asset-based
  * WhisperASR substituted for their external-storage model loader.
  *
- * The QUERY_ALL_PACKAGES permission in the manifest is critical: without it the
- * RecognitionService base class cannot resolve the caller's attribution chain
- * (package-visibility filtering hides other apps from this process), producing
- * "caller doesn't have permission: android.permission.RECORD_AUDIO" and firing
- * onCancel for every external caller — while in-app use keeps working, since an
- * app is always visible to itself. Do not remove it again.
+ * Package visibility is load-bearing: as the system RecognitionService we are
+ * bound by arbitrary apps, and the framework's checkPermissionAndStartDataDelivery()
+ * validates the caller via an AppOps proxy-op that applies package-visibility
+ * filtering with OUR uid. A caller invisible to this process is hard-denied with
+ * ERROR_INSUFFICIENT_PERMISSIONS (logcat: "RecognitionService: #startListening
+ * received from a caller without permission android.permission.RECORD_AUDIO"),
+ * onCancel fires, and onStartListening never records — even though the caller
+ * holds RECORD_AUDIO. The manifest declares the launcher intent under <queries>
+ * instead of QUERY_ALL_PACKAGES (Play restricts the latter): every launchable
+ * caller is visible; launcher-less service-only callers are not. In-app use
+ * always works (an app is visible to itself). Verified on Android 17, see the
+ * manifest comment. Do not remove the <queries> element.
  *
  * Callers must also hold a granted [android.permission.RECORD_AUDIO], enforced
  * by the framework's checkPermissionAndStartDataDelivery() against the caller's

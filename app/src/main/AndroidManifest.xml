@@ -8,14 +8,28 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
     <!--
-      QUERY_ALL_PACKAGES: without this, RecognitionService gets
-      "caller doesn't have permission: android.permission.RECORD_AUDIO"
-      when checkPermissionAndStartDataDelivery() resolves the caller's
-      attribution chain. Required by WhisperIMEplus for the same reason.
+      Package visibility is load-bearing for the RecognitionService: the
+      framework's checkPermissionAndStartDataDelivery() validates a binding
+      caller via an AppOps proxy-op that applies package-visibility filtering
+      with OUR uid. Callers this process cannot see are hard-denied with
+      ERROR_INSUFFICIENT_PERMISSIONS (logcat: "RecognitionService:
+      #startListening received from a caller without permission
+      android.permission.RECORD_AUDIO") before onStartListening records —
+      even when the caller holds RECORD_AUDIO.
+
+      QUERY_ALL_PACKAGES covers every caller but is Play-restricted (Kõnele's
+      was rejected), so instead declare the launcher intent: every launchable
+      app becomes visible. Verified on Android 17: launchable callers bind
+      fine; launcher-less service-only callers fail with
+      ERROR_INSUFFICIENT_PERMISSIONS. WhisperIMEplus ships QUERY_ALL_PACKAGES
+      for the same reason. Do not remove this <queries> element.
     -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
 
     <!-- Strip permissions injected by onnxruntime-android: the AAR's telemetry is
          opt-in (OrtEnvironment.setTelemetry), never enabled here, and the provider
