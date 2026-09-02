@@ -22,7 +22,9 @@ import com.konovalov.vad.webrtc.Vad
 import com.konovalov.vad.webrtc.config.FrameSize
 import com.konovalov.vad.webrtc.config.Mode
 import com.konovalov.vad.webrtc.config.SampleRate
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -82,6 +84,8 @@ class MaiseAsrService : RecognitionService() {
     @Volatile private var asr: WhisperASR? = null
     @Volatile private var isRecording = false
     @Volatile private var activeJob: Job? = null
+
+    private val sounds = RecognitionSounds(this)
 
     private val initLock = Object()
 
@@ -164,6 +168,7 @@ class MaiseAsrService : RecognitionService() {
         if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED) {
             Log.w(TAG, "RECORD_AUDIO not granted")
+            sounds.playError()
             listener.safe { error(SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) }
             return
         }
@@ -230,12 +235,14 @@ class MaiseAsrService : RecognitionService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "AudioRecord creation failed", e)
+            sounds.playError()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
 
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
+            sounds.playError()
             listener.safe { error(SpeechRecognizer.ERROR_AUDIO) }
             return
         }
@@ -243,6 +250,19 @@ class MaiseAsrService : RecognitionService() {
         isRecording = true
 
         activeJob = scope.launch {
+            // Start cue must COMPLETE before the mic opens: VOICE_RECOGNITION has no
+            // AEC, so a still-playing tone would be captured, falsely latch the
+            // WebRTC VAD (its ~200 ms speech debounce trips on this ~410 ms tone)
+            // and contaminate the transcript. Cancellation (onCancel) must also stop
+            // the tone instantly and leave the mic closed.
+            try {
+                sounds.playStart()
+            } catch (e: CancellationException) {
+                runCatching { rec.stop() }
+                runCatching { rec.release() }
+                throw e
+            }
+
             val vad = Vad.builder()
                 .setSampleRate(SampleRate.SAMPLE_RATE_16K)
                 .setFrameSize(FrameSize.FRAME_SIZE_480)
@@ -255,6 +275,8 @@ class MaiseAsrService : RecognitionService() {
             val chunk  = ByteArray(VAD_FRAME_BYTES)
             var speechStarted = false
             var lastRmsAt = 0L
+            // No-speech clock starts AFTER the cue so the 10 s budget isn't
+            // consumed by the ~0.4 s tone.
             val startedAt = SystemClock.elapsedRealtime()
 
             rec.startRecording()
@@ -311,15 +333,22 @@ class MaiseAsrService : RecognitionService() {
 
             // Speech never latched — report a timeout rather than transcribing noise.
             if (!speechStarted) {
+                if (isActive) sounds.playError()
                 listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
                 return@launch
             }
 
             // Mirror WhisperIMEplus threshold: > 6400 bytes (~0.2 s at 16 kHz 16-bit)
             if (output.size() <= 6400) {
+                if (isActive) sounds.playError()
                 listener.safe { error(SpeechRecognizer.ERROR_SPEECH_TIMEOUT) }
                 return@launch
             }
+
+            // Usable capture ended (VAD silence, manual stop, or 30 s cap) — the mic
+            // is closed, so the cue can't bleed into it. isActive keeps a cancelled
+            // session (popover dismissed) from beeping after the fact.
+            if (isActive) sounds.playStop()
 
             // Convert bytes → ShortArray for WhisperASR
             val bytes = output.toByteArray()
@@ -345,6 +374,7 @@ class MaiseAsrService : RecognitionService() {
 
         val engine = asr
         if (engine == null) {
+            sounds.playError()
             listener.safe { error(SpeechRecognizer.ERROR_RECOGNIZER_BUSY) }
             return
         }
@@ -368,6 +398,7 @@ class MaiseAsrService : RecognitionService() {
             Log.d(TAG, "Transcribed: \"$text\"")
 
             if (text.isBlank()) {
+                sounds.playError()
                 listener.safe { error(SpeechRecognizer.ERROR_NO_MATCH) }
                 return
             }
@@ -379,6 +410,7 @@ class MaiseAsrService : RecognitionService() {
             listener.safe { results(bundle) }
         } catch (e: Exception) {
             Log.e(TAG, "Transcription failed", e)
+            sounds.playError()
             listener.safe { error(SpeechRecognizer.ERROR_CLIENT) }
         }
     }

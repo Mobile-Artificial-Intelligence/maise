@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.danemadsen.maise.databinding.FragmentAsrBinding
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
@@ -34,6 +35,7 @@ class AsrFragment : Fragment() {
 
     private var asr: WhisperASR? = null
     private var recordJob: Job? = null
+    private val sounds by lazy { RecognitionSounds(requireContext().applicationContext) }
 
     @Volatile private var isRecording = false
     @Volatile private var pendingSamples: ShortArray? = null
@@ -110,7 +112,7 @@ class AsrFragment : Fragment() {
         val minBuf = AudioRecord.getMinBufferSize(
             REC_SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT
         )
-        if (minBuf <= 0) { setStatus("Audio device unavailable."); return }
+        if (minBuf <= 0) { sounds.playError(); setStatus("Audio device unavailable."); return }
 
         val rec = AudioRecord(
             MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -121,6 +123,7 @@ class AsrFragment : Fragment() {
         )
         if (rec.state != AudioRecord.STATE_INITIALIZED) {
             rec.release()
+            sounds.playError()
             setStatus("Failed to open microphone.")
             return
         }
@@ -131,6 +134,18 @@ class AsrFragment : Fragment() {
         binding.transcriptionText.setText("")
 
         recordJob = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            // Start cue must complete before the mic opens: VOICE_RECOGNITION has
+            // no AEC, so a still-playing tone would be captured into the buffer.
+            // onDestroyView cancels this job, which stops the tone and leaves
+            // the mic closed.
+            try {
+                sounds.playStart()
+            } catch (e: CancellationException) {
+                runCatching { rec.stop() }
+                runCatching { rec.release() }
+                throw e
+            }
+
             val maxSamples = REC_SAMPLE_RATE * MAX_RECORD_SECONDS
             val buffer     = ShortArray(maxSamples)
             val chunk      = ShortArray(1024)
@@ -144,6 +159,8 @@ class AsrFragment : Fragment() {
                 total += read
             }
             rec.stop(); rec.release()
+
+            if (total > 0) sounds.playStop() else sounds.playError()
 
             pendingSamples = if (total > 0) buffer.copyOf(total) else null
             isRecording = false
@@ -168,7 +185,7 @@ class AsrFragment : Fragment() {
         val samples = pendingSamples ?: run { setStatus("No audio captured."); return }
         pendingSamples = null
 
-        val engine = asr ?: run { setStatus("Model not ready."); return }
+        val engine = asr ?: run { sounds.playError(); setStatus("Model not ready."); return }
 
         setStatus("Transcribing\u2026")
         binding.recordButton.isEnabled = false
@@ -177,12 +194,14 @@ class AsrFragment : Fragment() {
             try {
                 val text = engine.transcribe(samples, REC_SAMPLE_RATE)
                 withContext(Dispatchers.Main) {
+                    if (text.isBlank()) sounds.playError()
                     binding.transcriptionText.setText(text.ifBlank { "(no speech detected)" })
                     setStatus("Done")
                     binding.recordButton.isEnabled = true
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
+                    sounds.playError()
                     setStatus("Transcription error: ${e.message}")
                     binding.recordButton.isEnabled = true
                 }
