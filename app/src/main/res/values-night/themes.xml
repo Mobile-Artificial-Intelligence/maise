@@ -1,17 +1,13 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
-    <!-- Night theme is identical to the base — the app is always dark. -->
-    <style name="Theme.Maise" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/on_surface</item>
-        <item name="colorOnPrimary">@color/app_background</item>
-        <item name="colorPrimaryVariant">@color/surface</item>
-        <item name="colorSurface">@color/surface</item>
-        <item name="colorOnSurface">@color/on_surface</item>
-        <item name="android:windowBackground">@color/app_background</item>
-        <item name="android:textColorPrimary">@color/on_surface</item>
-        <item name="android:textColorSecondary">@color/hint_text</item>
-        <item name="android:statusBarColor">@color/app_background</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    <!-- Dark mode: identical M3 DayNight parent (the library selects its dark
+         palette internally); only the status-bar icon appearance differs from
+         values/. Styles are wholly replaced per-configuration, so the night copy
+         must redefine Theme.Maise in full. -->
+    <style name="Theme.Maise" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
     </style>
 
 </resources>

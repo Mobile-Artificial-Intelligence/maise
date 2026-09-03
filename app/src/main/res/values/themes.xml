@@ -1,26 +1,24 @@
-<resources xmlns:tools="http://schemas.android.com/tools">
+<resources>
 
-    <style name="Theme.Maise" parent="Theme.MaterialComponents.DayNight.NoActionBar">
-        <item name="colorPrimary">@color/on_surface</item>
-        <item name="colorOnPrimary">@color/app_background</item>
-        <item name="colorPrimaryVariant">@color/surface</item>
-        <item name="colorSurface">@color/surface</item>
-        <item name="colorOnSurface">@color/on_surface</item>
-        <item name="android:windowBackground">@color/app_background</item>
-        <item name="android:textColorPrimary">@color/on_surface</item>
-        <item name="android:textColorSecondary">@color/hint_text</item>
-        <item name="android:statusBarColor">@color/app_background</item>
-        <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
+    <!-- Material 3, DayNight. Follows system light/dark on all API levels via the
+         library's internal -night theme selection. Material You dynamic colors are
+         applied at runtime by DynamicColors (MaiseApplication): API 31+ uses the
+         system accent/wallpaper palette; API 26-30 keep the static M3 baseline
+         palette. The transparent status bar is required for API 26-34; on API 35+
+         (edge-to-edge enforced) the color attr is ignored and only the
+         windowLightStatusBar appearance split matters. -->
+    <style name="Theme.Maise" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 
     <!-- Filled text field with no stroke and fully rounded corners -->
-    <style name="RoundedFilledInput" parent="Widget.MaterialComponents.TextInputLayout.FilledBox">
+    <style name="RoundedFilledInput" parent="Widget.Material3.TextInputLayout.FilledBox">
         <item name="boxStrokeWidth">0dp</item>
         <item name="boxStrokeWidthFocused">0dp</item>
-        <item name="boxBackgroundColor">@color/surface</item>
+        <item name="boxBackgroundColor">?attr/colorSurfaceContainerHighest</item>
         <item name="shapeAppearanceOverlay">@style/RoundedCornerShape</item>
-        <item name="hintTextColor">@color/hint_text</item>
-        <item name="android:textColorHint">@color/hint_text</item>
     </style>
 
     <style name="RoundedCornerShape">
@@ -29,7 +27,9 @@
     </style>
 
     <!-- Floating dialog theme for MaiseRecognizeActivity: compact card over a
-         dimmed (but visible) view of the calling app. -->
+         dimmed (but visible) view of the calling app. Implicit parent Theme.Maise
+         resolves per-configuration at runtime, so night mode picks up the
+         values-night Theme.Maise. -->
     <style name="Theme.Maise.Recognize">
         <item name="android:windowIsFloating">true</item>
         <item name="android:windowIsTranslucent">true</item>
@@ -39,7 +39,7 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowAnimationStyle">@style/RecognizeWindowAnimation</item>
         <item name="windowNoTitle">true</item>
-        <!-- Keep the card at its literal surface color — MDC's elevation overlay
+        <!-- Keep the card at its literal surface color — the elevation overlay
              otherwise lightens it in proportion to cardElevation. -->
         <item name="elevationOverlayEnabled">false</item>
     </style>

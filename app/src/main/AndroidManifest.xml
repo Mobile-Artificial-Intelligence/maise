@@ -48,6 +48,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:largeHeap="true"
+        android:name=".MaiseApplication"
         android:theme="@style/Theme.Maise">
 
         <!-- Prevent ONNX Runtime's telemetry from initializing at process start. -->

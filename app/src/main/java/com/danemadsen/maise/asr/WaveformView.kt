@@ -3,24 +3,22 @@ package com.danemadsen.maise.asr
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
-import android.graphics.Shader
 import android.util.AttributeSet
 import android.view.View
 import android.view.animation.LinearInterpolator
-import androidx.core.content.ContextCompat
-import com.danemadsen.maise.R
+import com.google.android.material.color.MaterialColors
 import kotlin.math.max
 import kotlin.math.sin
 
 /**
  * Animated audio-level bars shown while the recognition popover listens.
  *
- * Styled after the app icon's waveform (resources/icon_foreground.svg): a row of
- * round-capped vertical bars painted with the brand cyan-to-magenta gradient,
- * tallest toward the center with dot-bars at each end.
+ * A row of round-capped vertical bars painted a single solid theme accent color
+ * (Material You dynamic primary on API 31+, M3 baseline on API 26-30), tallest
+ * toward the center with dot-bars at each end.
  *
  * [setLevel] receives a normalized 0..1 voice level (driven by RMS from
  * [MaiseAsrService]); bars smoothly grow toward it, scaled by a center-weighted
@@ -49,11 +47,19 @@ class WaveformView @JvmOverloads constructor(
         val PROFILE = floatArrayOf(0.3f, 0.5f, 0.75f, 0.95f, 1.0f, 0.95f, 0.75f, 0.5f, 0.3f)
     }
 
-    private val gradientStart = ContextCompat.getColor(context, R.color.waveform_start)
-    private val gradientEnd = ContextCompat.getColor(context, R.color.waveform_end)
+    // Single solid accent color, resolved from the theme. Resolving at
+    // construction is correct: on API 31+ the dynamic-color overlay is applied
+    // in onActivityPreCreated (before setContentView inflates this view), and
+    // below 31 the static baseline palette needs no overlay. A uiMode change
+    // recreates MaiseRecognizeActivity (its configChanges list excludes
+    // uiMode), giving a freshly-constructed view with the new palette.
+    private val accentColor = MaterialColors.getColor(
+        this, com.google.android.material.R.attr.colorPrimary, Color.GRAY
+    )
 
     private val barPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         strokeCap = Paint.Cap.ROUND
+        color = accentColor
     }
 
     /** Per-bar phase offsets so bars move out of step. */
@@ -79,19 +85,6 @@ class WaveformView @JvmOverloads constructor(
         processing = value
         barPaint.alpha = if (processing) PROCESSING_ALPHA else 255
         invalidate()
-    }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        if (w > 0) {
-            // Brand gradient flowing diagonally from top-left to bottom-right
-            // across the whole waveform, as in the app icon.
-            barPaint.shader = LinearGradient(
-                0f, 0f, w.toFloat(), h.toFloat(),
-                gradientStart, gradientEnd,
-                Shader.TileMode.CLAMP
-            )
-        }
     }
 
     override fun onAttachedToWindow() {

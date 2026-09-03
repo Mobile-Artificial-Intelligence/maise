@@ -9,7 +9,6 @@
         android:layout_width="280dp"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        app:cardBackgroundColor="@color/surface"
         app:cardCornerRadius="16dp"
         app:cardElevation="12dp">
 
@@ -34,7 +33,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
                 android:gravity="center"
-                android:textColor="@color/on_surface"
+                android:textColor="?attr/colorOnSurface"
                 android:textSize="16sp"
                 android:maxLines="3"
                 android:ellipsize="end"
@@ -47,7 +46,7 @@
                 android:layout_marginTop="8dp"
                 android:gravity="center"
                 android:text="@string/recognize_listening"
-                android:textColor="@color/hint_text"
+                android:textColor="?attr/colorOnSurfaceVariant"
                 android:textSize="12sp" />
 
         </LinearLayout>
