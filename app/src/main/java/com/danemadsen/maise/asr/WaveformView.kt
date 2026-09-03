@@ -84,10 +84,10 @@ class WaveformView @JvmOverloads constructor(
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w > 0) {
-            // Brand gradient flowing left-to-right across the whole waveform,
-            // as in the app icon.
+            // Brand gradient flowing diagonally from top-left to bottom-right
+            // across the whole waveform, as in the app icon.
             barPaint.shader = LinearGradient(
-                0f, 0f, w.toFloat(), 0f,
+                0f, 0f, w.toFloat(), h.toFloat(),
                 gradientStart, gradientEnd,
                 Shader.TileMode.CLAMP
             )
