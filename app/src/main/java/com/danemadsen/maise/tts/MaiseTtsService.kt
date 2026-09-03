@@ -52,9 +52,9 @@ class MaiseTtsService : TextToSpeechService() {
 
     // -------------------------------------------------------------------------
     // Language support — availability is checked against the shipped voices.
-    // Countries not shipped for a supported language (e.g. en-AU) still report
-    // LANG_AVAILABLE and resolve to a voice of the same language, so English
-    // variants (AU, CA, IN, ...) are served by the en-US/en-GB voices.
+    // Every voice is en_US (the phonemizer is en_us-only), so only English
+    // reports as available; other countries (en-AU, en-GB, ...) still report
+    // LANG_AVAILABLE and resolve onto an en-US voice.
     // -------------------------------------------------------------------------
 
     @Volatile
